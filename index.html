@@ -333,6 +333,131 @@
     margin-top:2px;
   }
 
+  /* ---------- multi-file queue list ---------- */
+  .queue-list{
+    margin-top:16px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .queue-item{
+    display:grid;
+    grid-template-columns:16px 1fr auto;
+    align-items:center;
+    gap:12px;
+    padding:10px 14px;
+    background:#fff;
+    border:1px solid var(--grid-line-strong);
+    font-family:"JetBrains Mono", monospace;
+    font-size:12.5px;
+  }
+  .queue-item .qi-icon{
+    width:14px; height:14px;
+    border-radius:50%;
+    border:2px solid var(--grid-line-strong);
+    position:relative;
+    flex-shrink:0;
+  }
+  .queue-item.pending .qi-icon{
+    border-top-color:var(--pencil);
+    animation:spin .8s linear infinite;
+  }
+  .queue-item.done .qi-icon{
+    border:none;
+    background:var(--pass);
+  }
+  .queue-item.done .qi-icon::after{
+    content:"";
+    position:absolute; left:3px; top:0px;
+    width:4px; height:8px;
+    border:solid #fff;
+    border-width:0 2px 2px 0;
+    transform:rotate(45deg);
+  }
+  .queue-item.error .qi-icon{
+    border:none;
+    background:var(--fail);
+  }
+  .queue-item.error .qi-icon::after{
+    content:"✕";
+    position:absolute; left:1.5px; top:-4.5px;
+    font-size:9px; color:#fff; font-weight:700;
+  }
+  .queue-item .qi-name{
+    color:var(--ink);
+    word-break:break-all;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .queue-item .qi-status{
+    color:var(--pencil);
+    font-size:11px;
+    white-space:nowrap;
+  }
+  .queue-item.error .qi-status{color:var(--fail);}
+  .queue-item.done .qi-status{color:var(--pass);}
+
+  /* ---------- batch summary bar ---------- */
+  .batch-summary{
+    display:flex;
+    gap:0;
+    margin-bottom:28px;
+    border:1px solid var(--grid-line-strong);
+    background:#fff;
+    box-shadow:var(--paper-shadow);
+  }
+  .batch-summary-item{
+    flex:1;
+    padding:16px 18px;
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+    border-right:1px solid var(--grid-line-strong);
+  }
+  .batch-summary-item:last-child{border-right:none;}
+  .batch-summary-num{
+    font-family:"Noto Serif JP", serif;
+    font-weight:900;
+    font-size:28px;
+    color:var(--ink);
+    line-height:1;
+  }
+  .batch-summary-item.pass .batch-summary-num{color:var(--pass);}
+  .batch-summary-item.fail .batch-summary-num{color:var(--fail);}
+  .batch-summary-label{
+    font-size:12px;
+    color:var(--pencil);
+    font-family:"JetBrains Mono", monospace;
+  }
+
+  /* ---------- per-file result card ---------- */
+  .file-card{
+    background:transparent;
+    margin-bottom:36px;
+    padding-top:22px;
+    border-top:1px solid var(--grid-line-strong);
+  }
+  .file-card:first-child{border-top:none; padding-top:0;}
+  .file-card-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:16px;
+  }
+  .file-card-name{
+    font-family:"JetBrains Mono", monospace;
+    font-size:13px;
+    color:var(--indigo);
+    word-break:break-all;
+  }
+  .file-card-name::before{
+    content:"file / ";
+    color:var(--pencil);
+  }
+
   .excluded-note{
     margin-top:22px;
     font-size:13px;
@@ -433,7 +558,7 @@
   <header class="hero">
     <span class="eyebrow"><span class="dot"></span>PDF FORENSICS TOOL</span>
     <h1 class="title">タイトル・氏名を除いた<br>本文は、<span class="accent">何字</span>か。</h1>
-    <p class="lede">探究論文やレポートのPDFをアップロードすると、タイトル・氏名・参考文献を除いた本文の文字数と、使用フォント（書体名・サイズ）を自動で解析します。</p>
+    <p class="lede">探究論文やレポートのPDFをアップロードすると、タイトル・氏名・参考文献を除いた本文の文字数と、使用フォント（書体名・サイズ）を自動で解析します。複数ファイルをまとめてアップロードすれば、クラス分・提出物一括の検査にも対応します。</p>
 
     <div class="hero-grid-demo">
       <div class="genkoyoushi" id="heroGrid" aria-hidden="true"></div>
@@ -447,13 +572,14 @@
       <h2>PDFをアップロード</h2>
     </div>
 
-    <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="PDFファイルをアップロード">
-      <input type="file" id="fileInput" accept="application/pdf">
+    <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="PDFファイルをアップロード（複数選択可）">
+      <input type="file" id="fileInput" accept="application/pdf" multiple>
       <div class="dz-icon"></div>
       <div class="dz-title">クリックまたはドラッグ＆ドロップ</div>
-      <div class="dz-sub">.pdf ファイルのみ対応</div>
-      <div class="dz-filename" id="fileName"></div>
+      <div class="dz-sub">.pdf ファイルのみ対応・複数選択可</div>
     </div>
+
+    <div class="queue-list" id="queueList"></div>
 
     <div class="status-line">
       <span class="spinner" id="spinner"></span>
@@ -470,46 +596,22 @@
         <h2>解析結果</h2>
       </div>
 
-      <span class="stamp-badge" id="stampBadge">検 印 済</span>
-
-      <div class="stat-row">
-        <div class="stat-card hanko-border">
-          <div class="stat-label">本文の文字数</div>
-          <div class="stat-value" id="charCount">—<span class="unit">字</span></div>
-          <div class="stat-sub">タイトル・氏名・参考文献一覧を除いた合計</div>
+      <div class="batch-summary" id="batchSummary" style="display:none;">
+        <div class="batch-summary-item">
+          <span class="batch-summary-num" id="summaryTotal">0</span>
+          <span class="batch-summary-label">件 検査</span>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">検出ページ数</div>
-          <div class="stat-value" id="pageCount">—<span class="unit">頁</span></div>
-          <div class="stat-sub" id="pageSub">—</div>
+        <div class="batch-summary-item pass">
+          <span class="batch-summary-num" id="summaryPass">0</span>
+          <span class="batch-summary-label">件 全項目合格</span>
+        </div>
+        <div class="batch-summary-item fail">
+          <span class="batch-summary-num" id="summaryFail">0</span>
+          <span class="batch-summary-label">件 要確認</span>
         </div>
       </div>
 
-      <div class="section-head" style="margin-top:10px;">
-        <span class="section-num">03</span>
-        <h2>使用フォント</h2>
-      </div>
-
-      <table class="font-table">
-        <thead>
-          <tr>
-            <th>要素</th>
-            <th>フォント名</th>
-            <th>サイズ</th>
-            <th>出現数</th>
-            <th>判定</th>
-          </tr>
-        </thead>
-        <tbody id="fontTableBody"></tbody>
-      </table>
-
-      <div class="excluded-note" id="excludedNote"></div>
-      <div class="judge-reason" id="judgeCriteriaNote"></div>
-
-      <details class="raw-toggle">
-        <summary>▸ 抽出データを見る（デバッグ用）</summary>
-        <pre id="rawOutput"></pre>
-      </details>
+      <div id="resultCards"></div>
     </div>
   </section>
 
@@ -579,18 +681,16 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs
 // ---------- DOM refs ----------
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
-const fileNameEl = document.getElementById('fileName');
 const statusText = document.getElementById('statusText');
 const spinner = document.getElementById('spinner');
 const errorBox = document.getElementById('errorBox');
 const results = document.getElementById('results');
-const charCountEl = document.getElementById('charCount');
-const pageCountEl = document.getElementById('pageCount');
-const pageSubEl = document.getElementById('pageSub');
-const fontTableBody = document.getElementById('fontTableBody');
-const excludedNote = document.getElementById('excludedNote');
-const rawOutput = document.getElementById('rawOutput');
-const stampBadge = document.getElementById('stampBadge');
+const queueList = document.getElementById('queueList');
+const resultCards = document.getElementById('resultCards');
+const batchSummary = document.getElementById('batchSummary');
+const summaryTotal = document.getElementById('summaryTotal');
+const summaryPass = document.getElementById('summaryPass');
+const summaryFail = document.getElementById('summaryFail');
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('keydown', (e) => { if(e.key==='Enter' || e.key===' ') fileInput.click(); });
@@ -599,10 +699,11 @@ dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover
 dropzone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropzone.classList.remove('dragover');
-  if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  if(e.dataTransfer.files.length) handleFiles(Array.from(e.dataTransfer.files));
 });
 fileInput.addEventListener('change', (e) => {
-  if(e.target.files.length) handleFile(e.target.files[0]);
+  if(e.target.files.length) handleFiles(Array.from(e.target.files));
+  fileInput.value = ''; // allow re-selecting the same file(s) later
 });
 
 function showError(msg){
@@ -622,43 +723,83 @@ const REFERENCE_HEADING_PATTERNS = [
   /引用文献/, /参考文献/, /参考資料/, /出典/, /^references$/i, /^bibliography$/i
 ];
 
-async function handleFile(file){
-  clearError();
-  results.classList.remove('active');
-  fileNameEl.textContent = file.name;
+function makeQueueItemId(index){ return `qi-${index}-${Date.now()}`; }
 
-  if(file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){
+function renderQueueItem(id, name){
+  const div = document.createElement('div');
+  div.className = 'queue-item pending';
+  div.id = id;
+  div.innerHTML = `<span class="qi-icon"></span><span class="qi-name">${escapeHtml(name)}</span><span class="qi-status">解析中…</span>`;
+  queueList.appendChild(div);
+  return div;
+}
+
+function updateQueueItem(el, state, statusMsg){
+  el.className = `queue-item ${state}`;
+  el.querySelector('.qi-status').textContent = statusMsg;
+}
+
+async function handleFiles(fileList){
+  clearError();
+
+  const pdfFiles = fileList.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+  const rejected = fileList.length - pdfFiles.length;
+  if(pdfFiles.length === 0){
     showError('PDFファイルを選択してください。');
     return;
   }
-
-  setStatus('PDFを読み込んでいます…', true);
-
-  try{
-    const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    const pdf = await loadingTask.promise;
-
-    setStatus(`テキストとフォント情報を抽出しています…（全${pdf.numPages}ページ）`, true);
-
-    const pages = []; // per page: { items: [{str, fontName, height, transform}], viewportHeight }
-    for(let p = 1; p <= pdf.numPages; p++){
-      const page = await pdf.getPage(p);
-      const textContent = await page.getTextContent();
-      const viewport = page.getViewport({ scale: 1 });
-      pages.push({ items: textContent.items, viewportHeight: viewport.height, styles: textContent.styles });
-    }
-
-    setStatus('文字数を集計しています…', true);
-    const analysis = analyzeDocument(pages);
-    renderResults(analysis, file.name, pdf.numPages);
-    setStatus(`完了：${pdf.numPages}ページを解析しました。`, false);
-
-  }catch(err){
-    console.error(err);
-    setStatus('', false);
-    showError('PDFの解析に失敗しました。ファイルが破損しているか、パスワード保護されている可能性があります。（' + (err && err.message ? err.message : '不明なエラー') + '）');
+  if(rejected > 0){
+    showError(`${rejected}件のファイルはPDFではないためスキップしました。`);
   }
+
+  results.classList.add('active');
+  batchSummary.style.display = pdfFiles.length > 1 ? 'flex' : 'none';
+
+  const analyses = []; // collect for summary tally
+
+  for(let i = 0; i < pdfFiles.length; i++){
+    const file = pdfFiles[i];
+    const qId = makeQueueItemId(i);
+    const qEl = renderQueueItem(qId, file.name);
+    setStatus(`(${i+1}/${pdfFiles.length}) ${file.name} を解析しています…`, true);
+
+    try{
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+
+      const pages = [];
+      for(let p = 1; p <= pdf.numPages; p++){
+        const page = await pdf.getPage(p);
+        const textContent = await page.getTextContent();
+        const viewport = page.getViewport({ scale: 1 });
+        pages.push({ items: textContent.items, viewportHeight: viewport.height, styles: textContent.styles });
+      }
+
+      const analysis = analyzeDocument(pages);
+      const judged = judgeAnalysis(analysis);
+      analyses.push(judged);
+
+      renderFileCard(analysis, judged, file.name, pdf.numPages);
+      updateQueueItem(qEl, 'done', `${judged.allPass ? '全項目合格' : '要確認あり'}・${pdf.numPages}頁`);
+
+    }catch(err){
+      console.error(err);
+      updateQueueItem(qEl, 'error', '解析失敗');
+      showError(`「${file.name}」の解析に失敗しました。ファイルが破損しているか、パスワード保護されている可能性があります。（${err && err.message ? err.message : '不明なエラー'}）`);
+    }
+  }
+
+  setStatus(`完了：${pdfFiles.length}件のPDFを解析しました。`, false);
+
+  if(pdfFiles.length > 1){
+    const passCount = analyses.filter(a => a.allPass).length;
+    summaryTotal.textContent = analyses.length;
+    summaryPass.textContent = passCount;
+    summaryFail.textContent = analyses.length - passCount;
+  }
+
+  document.getElementById('results-section').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
 // Build per-character records from a page's text items, approximating
@@ -956,10 +1097,9 @@ function judgeIcon(pass){
   return `<span class="judge-icon ${pass ? 'pass' : 'fail'}">${pass ? '✓' : '✕'}</span>`;
 }
 
-function renderResults(a, filename, numPages){
-  results.classList.add('active');
-
-  // ---- Judgements ----
+// Pure computation: derive all pass/fail judgements from an analysis result.
+// No DOM access — safe to call once per file before rendering.
+function judgeAnalysis(a){
   const charCountPass = a.charCount >= 3000;
 
   const titleTop = fmtFontRow(a.titleFonts[0]);
@@ -978,56 +1118,62 @@ function renderResults(a, filename, numPages){
   const bodyTop = fmtFontRow(a.bodyFonts[0]);
   const bodySizePass = sizeMatches(bodyTop.rawSize, 10, 0.15) || sizeMatches(bodyTop.rawSize, 10.5, 0.15);
 
-  // char count card color
-  charCountEl.innerHTML = (a.charCount.toLocaleString('ja-JP')) + '<span class="unit">字</span>';
-  charCountEl.classList.toggle('judge-pass', charCountPass);
-  charCountEl.classList.toggle('judge-fail', !charCountPass);
+  const checks = [charCountPass, titleFontPass, titleSizePass, nameFontPass, nameSizePass, bodySizePass];
+  if(seminarSizePass !== null) checks.push(seminarSizePass);
+  const allPass = checks.every(Boolean);
 
-  pageCountEl.innerHTML = numPages + '<span class="unit">頁</span>';
-  pageSubEl.textContent = a.refFound
-    ? `参考文献はページ${a.refPageIdx+1}以降として検出`
-    : '参考文献の見出しは検出されませんでした（全文を本文として計算）';
+  return {
+    charCountPass, titleTop, titleFamily, titleFontPass, titleSizePass,
+    nameTop, nameFamily, nameFontPass, nameSizePass,
+    semTop, seminarSizePass,
+    bodyTop, bodySizePass,
+    allPass
+  };
+}
 
-  stampBadge.textContent = a.refFound ? '検 印 済' : '要 確 認';
-  stampBadge.style.color = a.refFound ? 'var(--hanko)' : 'var(--indigo)';
-  stampBadge.style.borderColor = a.refFound ? 'var(--hanko)' : 'var(--indigo)';
+let cardCounter = 0;
+
+function renderFileCard(a, j, filename, numPages){
+  cardCounter++;
+  const uid = `fc${cardCounter}`;
+
+  const card = document.createElement('div');
+  card.className = 'file-card';
+
+  const stampLabel = a.refFound ? '検 印 済' : '要 確 認';
+  const stampColorVar = a.refFound ? 'var(--hanko)' : 'var(--indigo)';
 
   // font table rows
   const rows = [];
-  rows.push(rowHtml('title', 'タイトル', a.titleText, titleTop, a.titleFonts.reduce((s,e)=>s+e.count,0),
+  rows.push(rowHtml('title', 'タイトル', a.titleText, j.titleTop, a.titleFonts.reduce((s,e)=>s+e.count,0),
     [
-      { pass: titleFontPass, label: `書体：${titleFamily === 'gothic' ? 'ゴシック' : titleFamily === 'mincho' ? '明朝' : '不明'}` },
-      { pass: titleSizePass, label: `サイズ：16pt${titleSizePass ? '' : '想定'}` }
+      { pass: j.titleFontPass, label: `書体：${j.titleFamily === 'gothic' ? 'ゴシック' : j.titleFamily === 'mincho' ? '明朝' : '不明'}` },
+      { pass: j.titleSizePass, label: `サイズ：16pt${j.titleSizePass ? '' : '想定'}` }
     ]));
 
-  rows.push(rowHtml('name', '氏名', a.nameText, nameTop, a.nameFonts.reduce((s,e)=>s+e.count,0),
+  rows.push(rowHtml('name', '氏名', a.nameText, j.nameTop, a.nameFonts.reduce((s,e)=>s+e.count,0),
     [
-      { pass: nameFontPass, label: `書体：${nameFamily === 'mincho' ? '明朝' : nameFamily === 'gothic' ? 'ゴシック' : '不明'}` },
-      { pass: nameSizePass, label: `サイズ：12pt${nameSizePass ? '' : '想定'}` }
+      { pass: j.nameFontPass, label: `書体：${j.nameFamily === 'mincho' ? '明朝' : j.nameFamily === 'gothic' ? 'ゴシック' : '不明'}` },
+      { pass: j.nameSizePass, label: `サイズ：12pt${j.nameSizePass ? '' : '想定'}` }
     ]));
 
   if(a.seminarFonts.length){
-    rows.push(rowHtml('seminar', 'ゼミ名等', a.seminarText, semTop, a.seminarFonts.reduce((s,e)=>s+e.count,0),
+    rows.push(rowHtml('seminar', 'ゼミ名等', a.seminarText, j.semTop, a.seminarFonts.reduce((s,e)=>s+e.count,0),
       [
-        { pass: seminarSizePass, label: `サイズ：10.5pt${seminarSizePass ? '' : '想定'}` }
+        { pass: j.seminarSizePass, label: `サイズ：10.5pt${j.seminarSizePass ? '' : '想定'}` }
       ]));
   }
 
-  rows.push(rowHtml('body', '本文（最頻出）', '', bodyTop, a.bodyFonts.reduce((s,e)=>s+e.count,0),
+  rows.push(rowHtml('body', '本文（最頻出）', '', j.bodyTop, a.bodyFonts.reduce((s,e)=>s+e.count,0),
     [
-      { pass: bodySizePass, label: `サイズ：10/10.5pt${bodySizePass ? '' : '想定'}` }
+      { pass: j.bodySizePass, label: `サイズ：10/10.5pt${j.bodySizePass ? '' : '想定'}` }
     ]));
 
-  fontTableBody.innerHTML = rows.join('');
-
-  document.getElementById('judgeCriteriaNote').innerHTML =
-    '判定基準：本文3,000字以上／タイトルはゴシック体・16pt／氏名は明朝体・12pt／ゼミ名は10.5pt／本文は10ptまたは10.5ptを基準としています。';
-
-  excludedNote.innerHTML = `<strong>除外内訳：</strong> タイトル・氏名・所属ブロック ${a.debug.excludedHeaderCount.toLocaleString('ja-JP')}字、` +
+  const excludedNoteHtml = `<strong>除外内訳：</strong> タイトル・氏名・所属ブロック ${a.debug.excludedHeaderCount.toLocaleString('ja-JP')}字、` +
     (a.refFound ? `参考文献セクション以降 ${a.debug.excludedRefCount.toLocaleString('ja-JP')}字` : '参考文献セクションは検出されませんでした') +
     ` を本文文字数から除外しています。`;
 
-  rawOutput.textContent = JSON.stringify({
+  const rawJson = JSON.stringify({
     filename,
     charCount: a.charCount,
     detectedTitle: a.titleText,
@@ -1035,12 +1181,54 @@ function renderResults(a, filename, numPages){
     detectedSeminar: a.seminarText,
     bodyTopFonts: a.bodyFonts.slice(0,5),
     judgements: {
-      charCountPass, titleFontPass, titleSizePass, nameFontPass, nameSizePass, seminarSizePass, bodySizePass
+      charCountPass: j.charCountPass, titleFontPass: j.titleFontPass, titleSizePass: j.titleSizePass,
+      nameFontPass: j.nameFontPass, nameSizePass: j.nameSizePass, seminarSizePass: j.seminarSizePass, bodySizePass: j.bodySizePass
     },
     debug: a.debug
   }, null, 2);
 
-  document.getElementById('results-section').scrollIntoView({ behavior:'smooth', block:'start' });
+  card.innerHTML = `
+    <div class="file-card-head">
+      <span class="file-card-name">${escapeHtml(filename)}</span>
+      <span class="stamp-badge" style="color:${stampColorVar};border-color:${stampColorVar};">${stampLabel}</span>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat-card hanko-border">
+        <div class="stat-label">本文の文字数</div>
+        <div class="stat-value ${j.charCountPass ? 'judge-pass' : 'judge-fail'}">${a.charCount.toLocaleString('ja-JP')}<span class="unit">字</span></div>
+        <div class="stat-sub">タイトル・氏名・参考文献一覧を除いた合計（3,000字以上で合格）</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">検出ページ数</div>
+        <div class="stat-value">${numPages}<span class="unit">頁</span></div>
+        <div class="stat-sub">${a.refFound ? `参考文献はページ${a.refPageIdx+1}以降として検出` : '参考文献の見出しは検出されませんでした（全文を本文として計算）'}</div>
+      </div>
+    </div>
+
+    <table class="font-table">
+      <thead>
+        <tr>
+          <th>要素</th>
+          <th>フォント名</th>
+          <th>サイズ</th>
+          <th>出現数</th>
+          <th>判定</th>
+        </tr>
+      </thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>
+
+    <div class="excluded-note">${excludedNoteHtml}</div>
+    <div class="judge-reason">判定基準：本文3,000字以上／タイトルはゴシック体・16pt／氏名は明朝体・12pt／ゼミ名は10.5pt／本文は10ptまたは10.5ptを基準としています。</div>
+
+    <details class="raw-toggle">
+      <summary>▸ 抽出データを見る（デバッグ用）</summary>
+      <pre>${escapeHtml(rawJson)}</pre>
+    </details>
+  `;
+
+  resultCards.appendChild(card);
 }
 
 function rowHtml(roleClass, roleLabel, textPreview, fontInfo, count, judgements){
