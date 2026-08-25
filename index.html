@@ -329,9 +329,25 @@
   .file-result-head .file-summary{
     margin-left: auto;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 700;
     letter-spacing: 0.05em;
     white-space: nowrap;
+    padding: 6px 14px;
+    border: 2px solid transparent;
+  }
+  .file-result-head .file-summary.judge-ok{
+    background: #e9f5ec;
+    border-color: #1e7a34;
+  }
+  .file-result-head .file-summary.judge-ng{
+    background: #fbe9e6;
+    border-color: #b8281c;
+    animation: pulse-ng 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse-ng{
+    0%, 100% { box-shadow: 0 0 0 0 rgba(184,40,28,0.35); }
+    50% { box-shadow: 0 0 0 5px rgba(184,40,28,0); }
   }
   .file-list{
     margin-top: 18px;
@@ -354,8 +370,81 @@
     flex: none;
   }
   .file-list-item.done .dot{ background: #1e7a34; }
+  .file-list-item.warn .dot{ background: #b8281c; }
   .file-list-item.error .dot{ background: #b8281c; }
   .file-list-item.pending .dot{ background: var(--gold); }
+  .file-list-item.warn .fstatus{ color: #b8281c; font-weight: 700; }
+
+  /* NG warning banner */
+  .ng-banner{
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 18px;
+    padding: 16px 20px;
+    background: #fbe9e6;
+    border: 2px solid #b8281c;
+    box-shadow: 3px 3px 0 rgba(184,40,28,0.15);
+  }
+  .ng-banner .ng-icon{
+    font-size: 26px;
+    line-height: 1;
+    color: #b8281c;
+    flex: none;
+  }
+  .ng-banner .ng-body{
+    flex: 1;
+  }
+  .ng-banner .ng-title{
+    font-weight: 700;
+    font-size: 14px;
+    color: #b8281c;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+  .ng-banner .ng-items{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  .ng-banner .ng-tag{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #b8281c;
+    background: #fff;
+    border: 1px solid #b8281c;
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+  .ok-banner{
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 18px;
+    padding: 14px 20px;
+    background: #e9f5ec;
+    border: 2px solid #1e7a34;
+  }
+  .ok-banner .ok-icon{
+    font-size: 22px;
+    line-height: 1;
+    color: #1e7a34;
+    flex: none;
+  }
+  .ok-banner .ok-title{
+    font-weight: 700;
+    font-size: 14px;
+    color: #1e7a34;
+    letter-spacing: 0.05em;
+  }
+
+  .file-result-head.has-ng{
+    animation: none;
+  }
+  .file-result.has-ng{
+    outline: 3px solid #b8281c;
+    outline-offset: 6px;
+  }
 
   .font-tag-row{
     font-family: var(--mono);
@@ -607,8 +696,9 @@ async function handleFiles(files){
       } else {
         const card = analyze(allRuns, file.name, idx + 1, pdfFiles.length);
         results.appendChild(card);
-        item.className = 'file-list-item done';
-        item.querySelector('.fstatus').textContent = '完了';
+        const cardAllPass = card.dataset.allPass === 'true';
+        item.className = 'file-list-item ' + (cardAllPass ? 'done' : 'warn');
+        item.querySelector('.fstatus').textContent = cardAllPass ? '完了（全項目クリア）' : '完了（基準未達あり）';
         okCount++;
       }
     }catch(err){
@@ -847,16 +937,40 @@ function analyze(runs, filename, fileIndex, fileTotal){
   const card = document.createElement('div');
   card.className = 'file-result';
 
+  const CHECK_LABELS = {
+    body: `本文文字数（${CRITERIA.bodyCharMin}字以上）`,
+    titleSize: `タイトルサイズ（${CRITERIA.titleSize}pt）`,
+    nameSize: `氏名サイズ（${CRITERIA.nameSize}pt）`,
+    affSize: `ゼミ名サイズ（${CRITERIA.affSize}pt）`,
+    bodySize: `本文サイズ（${CRITERIA.bodySizes.join('pt / ')}pt）`
+  };
   const passCount = Object.values(judgements).filter(v => v === true).length;
   const totalChecks = Object.values(judgements).filter(v => v !== null).length;
   const allPass = passCount === totalChecks;
+  const ngKeys = Object.keys(judgements).filter(k => judgements[k] === false);
+
+  card.dataset.allPass = allPass ? 'true' : 'false';
+  if(!allPass){
+    card.classList.add('has-ng');
+  }
+
+  const bannerHtml = allPass
+    ? `<div class="ok-banner"><span class="ok-icon">✓</span><span class="ok-title">全${totalChecks}項目クリア — 基準を満たしています</span></div>`
+    : `<div class="ng-banner">
+        <span class="ng-icon">⚠</span>
+        <div class="ng-body">
+          <div class="ng-title">基準未達の項目があります（${ngKeys.length}/${totalChecks}）</div>
+          <div class="ng-items">${ngKeys.map(k => `<span class="ng-tag">✗ ${CHECK_LABELS[k]}</span>`).join('')}</div>
+        </div>
+      </div>`;
 
   card.innerHTML = `
     <div class="file-result-head">
       <span class="file-index">${fileIndex} / ${fileTotal}</span>
       <span class="file-name">${escapeHtml(filename)}</span>
-      <span class="file-summary ${allPass ? 'judge-ok' : 'judge-ng'}">${allPass ? '✓ 全項目クリア' : `△ ${passCount}/${totalChecks} 項目クリア`}</span>
+      <span class="file-summary ${allPass ? 'judge-ok' : 'judge-ng'}">${allPass ? '✓ 全項目クリア' : `⚠ ${passCount}/${totalChecks} 項目クリア`}</span>
     </div>
+    ${bannerHtml}
 
     <div class="section-head">
       <span class="num">01</span>
@@ -892,6 +1006,7 @@ function analyze(runs, filename, fileIndex, fileTotal){
       </thead>
       <tbody class="sizeTableBody"></tbody>
     </table>
+
 
     <div class="section-head">
       <span class="num">04</span>
