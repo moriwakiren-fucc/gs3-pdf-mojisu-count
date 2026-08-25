@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>活字調査 — PDFフォント・文字数解析</title>
+<style>
+  @font-face {
+    font-family: 'ShippoMincho';
+    src: local('Hiragino Mincho ProN'), local('Yu Mincho'), local('MS Mincho');
+  }
+
+  :root{
+    --paper: #f2ede2;
+    --paper-deep: #e9e1d0;
+    --ink: #1c1a17;
+    --ink-soft: #4a4640;
+    --vermilion: #a8422e;
+    --vermilion-deep: #7c2f20;
+    --rule: #c9bfa8;
+    --gold: #a3873f;
+    --mono: 'Courier New', 'Courier', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "MS Mincho", serif;
+  }
+
+  body{
+    background-image:
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.015) 0px, rgba(0,0,0,0.015) 1px, transparent 1px, transparent 3px);
+    min-height: 100vh;
+  }
+
+  .kensu-tag{
+    position: fixed;
+    top: 0; right: 0;
+    writing-mode: vertical-rl;
+    background: var(--vermilion);
+    color: #f2ede2;
+    padding: 18px 8px;
+    font-size: 12px;
+    letter-spacing: 0.3em;
+    z-index: 50;
+    box-shadow: -2px 2px 6px rgba(0,0,0,0.2);
+  }
+
+  header.masthead{
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 56px 32px 28px;
+    border-bottom: 3px double var(--ink);
+    position: relative;
+  }
+
+  .eyebrow{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.35em;
+    color: var(--vermilion-deep);
+    margin-bottom: 14px;
+  }
+
+  h1.title{
+    font-size: clamp(28px, 5vw, 44px);
+    font-weight: 700;
+    margin: 0 0 10px;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
+  }
+
+  h1.title .ruby-note{
+    display: block;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    color: var(--ink-soft);
+    font-weight: normal;
+    margin-top: 8px;
+  }
+
+  .lede{
+    max-width: 62ch;
+    color: var(--ink-soft);
+    font-size: 15px;
+    line-height: 1.9;
+    margin-top: 18px;
+  }
+
+  main{
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 40px 32px 100px;
+  }
+
+  .dropzone{
+    border: 2px solid var(--ink);
+    background: var(--paper-deep);
+    padding: 48px 32px;
+    text-align: center;
+    position: relative;
+    cursor: pointer;
+    transition: border-color .2s ease, background .2s ease;
+  }
+  .dropzone::before, .dropzone::after{
+    content: "";
+    position: absolute;
+    width: 14px; height: 14px;
+    border: 2px solid var(--vermilion);
+  }
+  .dropzone::before{ top: -2px; left: -2px; border-right: none; border-bottom: none; }
+  .dropzone::after{ bottom: -2px; right: -2px; border-left: none; border-top: none; }
+
+  .dropzone.drag{
+    border-color: var(--vermilion);
+    background: #ece2cc;
+  }
+
+  .dz-mark{
+    font-family: var(--mono);
+    font-size: 34px;
+    color: var(--vermilion);
+    margin-bottom: 12px;
+    letter-spacing: 0.1em;
+  }
+
+  .dz-text{
+    font-size: 16px;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .dz-sub{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+    letter-spacing: 0.1em;
+  }
+
+  input[type=file]{ display: none; }
+
+  .status-line{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 16px;
+    min-height: 18px;
+    letter-spacing: 0.05em;
+  }
+  .status-line.err{ color: var(--vermilion-deep); }
+
+  .filename-tag{
+    display: inline-block;
+    margin-top: 18px;
+    padding: 6px 14px;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.05em;
+  }
+
+  /* results */
+  #results{ display: none; margin-top: 56px; }
+
+  .section-head{
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 48px 0 20px;
+  }
+  .section-head .num{
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--vermilion);
+    letter-spacing: 0.1em;
+  }
+  .section-head h2{
+    font-size: 20px;
+    margin: 0;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+  }
+  .section-head .rule{
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  .char-count-block{
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    padding: 30px 28px;
+    background: var(--paper-deep);
+    border-left: 4px solid var(--vermilion);
+  }
+  .char-count-block .big-num{
+    font-family: var(--mono);
+    font-size: 56px;
+    font-weight: bold;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .char-count-block .big-num .unit{
+    font-size: 20px;
+    margin-left: 4px;
+    color: var(--ink-soft);
+  }
+  .char-count-block .desc{
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.8;
+  }
+  .char-count-block .desc b{ color: var(--ink); }
+
+  .exclude-list{
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+  }
+  .exclude-list span{ white-space: nowrap; }
+  .exclude-list span.strike{ text-decoration: line-through; opacity: 0.6; }
+
+  table.spec-table{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  table.spec-table th, table.spec-table td{
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+  table.spec-table th{
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--ink-soft);
+    font-weight: normal;
+    border-bottom: 2px solid var(--ink);
+  }
+  table.spec-table td.sample{
+    font-size: 18px;
+  }
+  table.spec-table td.mono{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--vermilion-deep);
+  }
+  table.spec-table tr:hover td{ background: rgba(168,66,46,0.04); }
+
+  .font-tag-row{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+
+  .breakdown-chart{
+    margin-top: 24px;
+  }
+  .breakdown-row{
+    display: grid;
+    grid-template-columns: 160px 1fr 60px;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+  .breakdown-row .label{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .breakdown-row .bar-track{
+    background: var(--paper-deep);
+    height: 16px;
+    position: relative;
+    border: 1px solid var(--rule);
+  }
+  .breakdown-row .bar-fill{
+    background: var(--vermilion);
+    height: 100%;
+  }
+  .breakdown-row .val{
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: right;
+    color: var(--ink-soft);
+  }
+
+  .note-box{
+    margin-top: 32px;
+    padding: 18px 22px;
+    border: 1px dashed var(--rule);
+    font-size: 12px;
+    color: var(--ink-soft);
+    line-height: 1.9;
+  }
+  .note-box b{ color: var(--ink); }
+
+  footer{
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 30px 32px 60px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+    letter-spacing: 0.05em;
+    border-top: 1px solid var(--rule);
+  }
+
+  .spinner{
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--rule);
+    border-top-color: var(--vermilion);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin{ to { transform: rotate(360deg); } }
+
+  @media (max-width: 600px){
+    header.masthead, main, footer{ padding-left: 20px; padding-right: 20px; }
+    .char-count-block{ flex-direction: column; gap: 8px; align-items: flex-start; }
+    .char-count-block .big-num{ font-size: 44px; }
+    .breakdown-row{ grid-template-columns: 100px 1fr 50px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="kensu-tag">検 字</div>
+
+<header class="masthead">
+  <div class="eyebrow">TYPEFACE &amp; CHARACTER SURVEY / 活字調査</div>
+  <h1 class="title">
+    PDFフォント・文字数解析
+    <span class="ruby-note">TITLE PAGE FONT INSPECTOR — 表題・氏名・所属・本文の書体を数える</span>
+  </h1>
+  <p class="lede">
+    PDFを1枚読み込むと、埋め込みフォントの実体を1文字ずつ調べます。表題・氏名・ゼミ名（所属）を自動で見分け、それぞれの書体名と文字サイズを表にします。あわせて、表題・氏名・参考文献一覧を除いた「本文」の文字数も数えます。すべてブラウザ内で処理し、ファイルはどこにも送信しません。
+  </p>
+</header>
+
+<main>
+  <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="PDFファイルを選択またはドロップ">
+    <div class="dz-mark">⎗</div>
+    <div class="dz-text">PDFをここにドロップ、またはクリックして選択</div>
+    <div class="dz-sub">.PDF ONLY — 処理はすべて端末内で完結します</div>
+    <input type="file" id="fileInput" accept="application/pdf">
+  </div>
+  <div class="status-line" id="statusLine"></div>
+
+  <div id="results">
+
+    <div class="section-head">
+      <span class="num">01</span>
+      <h2>本文の文字数</h2>
+      <span class="rule"></span>
+    </div>
+    <div class="char-count-block">
+      <div class="big-num" id="bodyCharCount">—<span class="unit">字</span></div>
+      <div class="desc" id="bodyCharDesc"></div>
+    </div>
+    <div class="exclude-list" id="excludeList"></div>
+
+    <div class="section-head">
+      <span class="num">02</span>
+      <h2>表題・氏名のフォント名</h2>
+      <span class="rule"></span>
+    </div>
+    <table class="spec-table" id="nameTable">
+      <thead>
+        <tr><th>区分</th><th>該当テキスト</th><th>書体（フォント名）</th><th>サイズ</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="section-head">
+      <span class="num">03</span>
+      <h2>表題・氏名・所属・本文の文字サイズ</h2>
+      <span class="rule"></span>
+    </div>
+    <table class="spec-table" id="sizeTable">
+      <thead>
+        <tr><th>区分</th><th>サンプル</th><th>サイズ（pt）</th><th>書体</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="section-head">
+      <span class="num">04</span>
+      <h2>文書全体のフォント内訳</h2>
+      <span class="rule"></span>
+    </div>
+    <div class="breakdown-chart" id="breakdownChart"></div>
+
+    <div class="note-box" id="noteBox"></div>
+  </div>
+</main>
+
+<footer>
+  PDF.js による解析 — ブラウザ内処理 / 検出結果はPDFの内部構造（埋め込みフォント名・文字座標）に基づく推定です。表題・氏名・所属・参考文献の判定はレイアウト上の手がかり（フォントサイズ・位置・記号）による自動判定のため、文書によっては手動確認を推奨します。
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const statusLine = document.getElementById('statusLine');
+const results = document.getElementById('results');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fileInput.click(); }
+});
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if(f) handleFile(f);
+});
+fileInput.addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if(f) handleFile(f);
+});
+
+function setStatus(msg, isErr){
+  statusLine.textContent = msg;
+  statusLine.classList.toggle('err', !!isErr);
+}
+
+// Characters we don't count toward "body text" length: whitespace, and
+// pure layout artifacts. Full-width and half-width spaces are excluded,
+// as are raw newlines picked up during item joining.
+function isCountableChar(ch){
+  if(ch === '\u0020' || ch === '\u3000') return false; // half/full width space
+  if(ch === '\n' || ch === '\r' || ch === '\t') return false;
+  return true;
+}
+
+async function handleFile(file){
+  if(file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){
+    setStatus('PDFファイルを選択してください。', true);
+    return;
+  }
+  results.style.display = 'none';
+  setStatus('読み込み中…');
+  const marker = document.createElement('span');
+  marker.className = 'spinner';
+  statusLine.prepend(marker);
+
+  try{
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+    // Collect all text runs across all pages, with position + font info.
+    // Each "run" = one item from getTextContent(), which PDF.js groups by
+    // contiguous same-font same-size glyphs.
+    const allRuns = [];
+    for(let p = 1; p <= pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const viewport = page.getViewport({ scale: 1 });
+
+      for(const item of content.items){
+        if(item.str === undefined) continue;
+        const fontObj = content.styles ? content.styles[item.fontName] : null;
+        const realFontName = (fontObj && fontObj.fontFamily) ? fontObj.fontFamily : item.fontName;
+        // transform[3] approximates the glyph height in PDF pt (font size)
+        const sizePt = Math.abs(item.transform[0]) || Math.abs(item.transform[3]) || 0;
+        allRuns.push({
+          page: p,
+          text: item.str,
+          fontKey: item.fontName,
+          fontName: realFontName,
+          size: Math.round(sizePt * 10) / 10,
+          y: item.transform[5],
+          x: item.transform[4],
+          pageHeight: viewport.height
+        });
+      }
+    }
+
+    if(allRuns.length === 0){
+      setStatus('テキストを抽出できませんでした（画像PDFの可能性があります）。', true);
+      return;
+    }
+
+    analyze(allRuns, file.name);
+    document.getElementById('filenameDisplay')?.remove();
+    const tag = document.createElement('div');
+    tag.className = 'filename-tag';
+    tag.id = 'filenameDisplay';
+    tag.textContent = file.name;
+    setStatus('');
+    dropzone.appendChild(tag);
+    results.style.display = 'block';
+    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  }catch(err){
+    console.error(err);
+    setStatus('解析中にエラーが発生しました: ' + err.message, true);
+  }
+}
+
+// --- Core structural heuristics -------------------------------------------
+//
+// We don't hardcode any specific title/name text. Instead we infer roles
+// from layout conventions common to Japanese academic report title pages:
+//
+//  - TITLE: the run(s) with the largest font size, located near the top of
+//    page 1 (within the first ~25% of page height).
+//  - NAME: on page 1, after the title, the next distinct font-size run
+//    that is not the title size and not typical body size — usually larger
+//    than body or a distinctive serif when body is gothic (or vice versa).
+//  - AAAFFILIATION (zemi/lab name): a run on page 1 near the name,
+//    often wrapped in brackets such as 〈 〉 or （ ）, or immediately
+//    following the name at a smaller size than the name.
+//  - BODY: the most frequent (size, font) combination by character count,
+//    i.e. the run configuration that covers the bulk of the document —
+//    this is the paragraph text.
+//  - REFERENCES: everything from a heading matching common "references"
+//    markers (引用文献 / 参考文献 / 参考資料 / Bibliography / References)
+//    onward is excluded from the body character count.
+
+function analyze(runs, filename){
+  const page1Runs = runs.filter(r => r.page === 1);
+  const pageHeight = page1Runs.length ? page1Runs[0].pageHeight : 0;
+
+  // Character-weighted frequency of (fontName, size) across WHOLE document
+  const freq = new Map(); // key -> {count, fontName, size}
+  for(const r of runs){
+    const chars = [...r.text].filter(isCountableChar);
+    if(chars.length === 0) continue;
+    const key = r.fontName + '@@' + r.size;
+    if(!freq.has(key)) freq.set(key, { count: 0, fontName: r.fontName, size: r.size });
+    freq.get(key).count += chars.length;
+  }
+  const freqSorted = [...freq.values()].sort((a,b) => b.count - a.count);
+  const bodyStyle = freqSorted[0]; // most common style = body text
+
+  // Top-of-page-1 runs, sorted by font size descending, to find title
+  const topRuns = page1Runs.filter(r => pageHeight === 0 || r.y > pageHeight * 0.55); // top area (PDF y grows upward from bottom, so "top of page" = large y)
+  const candidateRuns = topRuns.length ? topRuns : page1Runs;
+
+  const sizesOnPage1 = [...new Set(candidateRuns.map(r => r.size))].sort((a,b) => b-a);
+  const titleSize = sizesOnPage1[0];
+
+  // Group consecutive runs by (size) to reconstruct title / name / affiliation lines
+  // Sort candidate runs by reading order (top-to-bottom = descending y, then left-to-right x)
+  const ordered = [...candidateRuns].sort((a,b) => (b.y - a.y) || (a.x - b.x));
+
+  // Merge into "lines" by size, collecting contiguous runs of the same size
+  const lines = [];
+  for(const r of ordered){
+    const chars = [...r.text].filter(isCountableChar);
+    if(chars.length === 0 && r.text.trim() === '') continue;
+    const last = lines[lines.length - 1];
+    if(last && Math.abs(last.size - r.size) < 0.15 && Math.abs(last.y - r.y) < Math.max(3, r.size * 0.6)){
+      last.text += r.text;
+      last.fontNames.add(r.fontName);
+    } else {
+      lines.push({ text: r.text, size: r.size, fontNames: new Set([r.fontName]), y: r.y });
+    }
+  }
+
+  // Title = the line(s) at titleSize, merged if adjacent
+  const titleLines = [];
+  for(const l of lines){
+    if(Math.abs(l.size - titleSize) < 0.15){
+      titleLines.push(l);
+    } else if(titleLines.length > 0){
+      break; // stop once we leave the title block
+    }
+  }
+  const titleText = titleLines.map(l => l.text.trim()).join('').trim();
+  const titleFonts = [...new Set(titleLines.flatMap(l => [...l.fontNames]))];
+
+  // Everything below title, before body-sized text resumes in earnest = name/affiliation block.
+  // A line belongs to this "header block" if its size differs from the body's
+  // dominant size (bodyStyle.size) and from the title size — this is more
+  // robust than checking for brackets, since name and affiliation are
+  // sometimes on one visual line and sometimes on two, and either may or
+  // may not use brackets. We stop collecting as soon as a line's size
+  // matches the body size (i.e. body text has resumed).
+  const titleLineCount = titleLines.length;
+  const afterTitle = lines.slice(titleLineCount);
+  const headerBlockLines = [];
+  for(const l of afterTitle){
+    if(l.text.trim().length === 0) continue;
+    if(Math.abs(l.size - bodyStyle.size) < 0.15) break; // body text has resumed
+    if(Math.abs(l.size - titleSize) < 0.15) break; // safety: don't re-absorb title-sized text
+    headerBlockLines.push(l);
+  }
+
+  // Within the header block, split into "name" (typically the largest-size
+  // line(s) in the block, often the first) and "affiliation" (remaining
+  // line(s), often smaller and/or bracketed). If the block is a single line
+  // containing both a plain part and a bracketed part (e.g. "森脇 廉
+  // 〈ゼミ名〉"), we split that line textually instead.
+  let nameLine = null, affLine = null;
+  if(headerBlockLines.length === 1){
+    const l = headerBlockLines[0];
+    const bracketMatch = l.text.match(/([〈《][^〉》]*[〉》]|[（(][^）)]*[）)])/);
+    if(bracketMatch){
+      const before = l.text.slice(0, bracketMatch.index).trim();
+      const bracketText = bracketMatch[0];
+      nameLine = { text: before, size: l.size, fontNames: l.fontNames, y: l.y };
+      affLine = { text: bracketText, size: l.size, fontNames: l.fontNames, y: l.y };
+    } else {
+      nameLine = l;
+    }
+  } else if(headerBlockLines.length >= 2){
+    // multiple distinct-size lines: largest size = name, next = affiliation
+    const bySize = [...headerBlockLines].sort((a,b) => b.size - a.size);
+    nameLine = headerBlockLines.find(l => l.size === bySize[0].size) || headerBlockLines[0];
+    affLine = headerBlockLines.find(l => l !== nameLine) || null;
+  }
+
+  const nameText = nameLine ? nameLine.text.trim() : '（検出できませんでした）';
+  const nameFonts = nameLine ? [...nameLine.fontNames] : [];
+  const nameSize = nameLine ? nameLine.size : null;
+
+  const affText = affLine ? affLine.text.trim() : null;
+  const affFonts = affLine ? [...affLine.fontNames] : [];
+  const affSize = affLine ? affLine.size : null;
+
+  // --- Reference section detection ---
+  const refPattern = /(引用文献|参考文献|参考資料|参考url|references|bibliography)/i;
+  let refStartIndex = -1;
+  // find first run (in document order across all pages) whose text contains a ref marker
+  // and is reasonably short (a heading), OR just the first occurrence of the marker text at all,
+  // since reference lists in these documents are typically the final section.
+  outer:
+  for(let i = 0; i < runs.length; i++){
+    const t = runs[i].text;
+    if(refPattern.test(t)){
+      refStartIndex = i;
+      break outer;
+    }
+  }
+
+  // --- Body character count ---
+  // Exclude: title runs, the header block (name + affiliation), and
+  // everything from refStartIndex onward. Title/header-block runs are
+  // identified by y-position on page 1 (safer than string match, since
+  // string match could false-positive elsewhere in the doc). When a
+  // name+affiliation pair was split from one merged line (same y), we
+  // don't need to distinguish them for the *total* body count — only
+  // for the display table — so we attribute name-vs-affiliation by
+  // x-position (bracket text starts later on the line) purely for display.
+  const titleYs = new Set(titleLines.map(l => Math.round(l.y)));
+  const headerYs = new Set(headerBlockLines.map(l => Math.round(l.y)));
+  const splitOneLine = headerBlockLines.length === 1 && nameLine && affLine
+    && Math.round(nameLine.y) === Math.round(affLine.y);
+
+  let bodyCount = 0;
+  let titleCount = 0, nameCount = 0, affCount = 0, refCount = 0;
+
+  // Precompute the character offset within the merged line where the
+  // bracketed affiliation text begins, for the single-line split case.
+  let affSplitCharOffset = null;
+  if(splitOneLine){
+    const fullText = headerBlockLines[0].text;
+    const bracketMatch = fullText.match(/([〈《][^〉》]*[〉》]|[（(][^）)]*[）)])/);
+    affSplitCharOffset = bracketMatch ? bracketMatch.index : null;
+  }
+
+  let runningLineCharOffset = 0; // tracks position within the current header line for split attribution
+  let lastHeaderY = null;
+
+  for(let i = 0; i < runs.length; i++){
+    const r = runs[i];
+    const chars = [...r.text].filter(isCountableChar);
+    if(chars.length === 0) continue;
+
+    if(refStartIndex !== -1 && i >= refStartIndex){
+      refCount += chars.length;
+      continue;
+    }
+    if(r.page === 1 && Math.abs(r.size - titleSize) < 0.15 && titleYs.has(Math.round(r.y))){
+      titleCount += chars.length;
+      continue;
+    }
+    if(r.page === 1 && headerYs.has(Math.round(r.y))){
+      if(splitOneLine && affSplitCharOffset !== null){
+        // Determine if this run falls before or after the bracket boundary
+        // by tracking cumulative character offset within the line.
+        const yKey = Math.round(r.y);
+        if(lastHeaderY !== yKey){ runningLineCharOffset = 0; lastHeaderY = yKey; }
+        const runStartOffset = runningLineCharOffset;
+        runningLineCharOffset += r.text.length;
+        if(runStartOffset < affSplitCharOffset){
+          nameCount += chars.length;
+        } else {
+          affCount += chars.length;
+        }
+      } else if(nameLine && Math.abs(r.size - nameSize) < 0.15 && Math.round(r.y) === Math.round(nameLine.y)){
+        nameCount += chars.length;
+      } else if(affLine && Math.abs(r.size - affSize) < 0.15 && Math.round(r.y) === Math.round(affLine.y)){
+        affCount += chars.length;
+      } else {
+        nameCount += chars.length; // fallback: attribute to name block
+      }
+      continue;
+    }
+    bodyCount += chars.length;
+  }
+
+  // --- Render ---
+  renderBodyCount(bodyCount, titleCount, nameCount, affCount, refCount, refStartIndex !== -1);
+  renderNameTable(titleText, titleFonts, titleSize, nameText, nameFonts, nameSize, affText, affFonts, affSize);
+  renderSizeTable(titleText, titleFonts, titleSize, nameText, nameSize, nameFonts, affText, affSize, affFonts, bodyStyle);
+  renderBreakdown(freqSorted, runs);
+  renderNote(filename, refStartIndex !== -1);
+}
+
+function renderBodyCount(bodyCount, titleCount, nameCount, affCount, refCount, hasRefs){
+  document.getElementById('bodyCharCount').innerHTML = bodyCount.toLocaleString() + '<span class="unit">字</span>';
+  document.getElementById('bodyCharDesc').innerHTML =
+    `表題・氏名・所属${hasRefs ? '・引用/参考文献一覧' : ''}を除いた本文の文字数です（空白・改行は含みません）。<br>` +
+    `内訳 — 表題 <b>${titleCount}</b>字 ／ 氏名 <b>${nameCount}</b>字 ／ 所属 <b>${affCount}</b>字` +
+    (hasRefs ? ` ／ 引用・参考文献 <b>${refCount}</b>字` : ' ／ 引用・参考文献セクション未検出') +
+    ` を除外。`;
+
+  const list = document.getElementById('excludeList');
+  list.innerHTML = `
+    <span>除外: 表題 (${titleCount}字)</span>
+    <span>除外: 氏名 (${nameCount}字)</span>
+    <span>除外: 所属 (${affCount}字)</span>
+    <span class="${hasRefs ? '' : 'strike'}">除外: 引用・参考文献 (${refCount}字)</span>
+  `;
+}
+
+function shortFontLabel(f){
+  if(!f) return '(不明)';
+  return f.replace(/^[A-Z]{6}\+/, ''); // strip PDF subset prefix like ABCDEF+
+}
+
+function renderNameTable(titleText, titleFonts, titleSize, nameText, nameFonts, nameSize, affText, affFonts, affSize){
+  const tbody = document.querySelector('#nameTable tbody');
+  const rows = [
+    { label: '表題', text: titleText, fonts: titleFonts, size: titleSize },
+    { label: '氏名', text: nameText, fonts: nameFonts, size: nameSize },
+  ];
+  if(affText){
+    rows.push({ label: '所属（ゼミ等）', text: affText, fonts: affFonts, size: affSize });
+  }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.label}</td>
+      <td class="sample">${escapeHtml(r.text)}</td>
+      <td class="mono">${r.fonts.map(shortFontLabel).join(', ') || '—'}</td>
+      <td class="mono">${r.size !== null ? r.size + 'pt' : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function renderSizeTable(titleText, titleFonts, titleSize, nameText, nameSize, nameFonts, affText, affSize, affFonts, bodyStyle){
+  const tbody = document.querySelector('#sizeTable tbody');
+  const rows = [
+    { label: '表題', sample: titleText, size: titleSize, fonts: titleFonts },
+    { label: '氏名', sample: nameText, size: nameSize, fonts: nameFonts },
+  ];
+  if(affText){
+    rows.push({ label: '所属（ゼミ等）', sample: affText, size: affSize, fonts: affFonts });
+  }
+  rows.push({ label: '本文（最頻出）', sample: '（本文中で最も多く使われた書体・サイズ）', size: bodyStyle.size, fonts: [bodyStyle.fontName] });
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.label}</td>
+      <td class="sample" style="font-size:${Math.max(12, Math.min(22, (r.size||14)))}px">${escapeHtml(truncate(r.sample, 20))}</td>
+      <td class="mono">${r.size !== null ? r.size + 'pt' : '—'}</td>
+      <td class="mono">${r.fonts.map(shortFontLabel).join(', ') || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function renderBreakdown(freqSorted, runs){
+  const totalChars = freqSorted.reduce((s,f) => s + f.count, 0);
+  const top = freqSorted.slice(0, 8);
+  const maxCount = top[0] ? top[0].count : 1;
+  const chart = document.getElementById('breakdownChart');
+  chart.innerHTML = top.map(f => {
+    const pct = (f.count / maxCount) * 100;
+    const sharePct = totalChars ? ((f.count / totalChars) * 100).toFixed(1) : '0.0';
+    return `
+      <div class="breakdown-row">
+        <div class="label" title="${shortFontLabel(f.fontName)} ${f.size}pt">${shortFontLabel(f.fontName)} / ${f.size}pt</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="val">${f.count}字 (${sharePct}%)</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderNote(filename, hasRefs){
+  const note = document.getElementById('noteBox');
+  note.innerHTML = `
+    <b>判定方法について</b> — 「表題」はページ1冒頭付近で最大の文字サイズを持つ行、「氏名」は表題の直後に現れる行、
+    「所属」はその次の行（〈 〉などの括弧書きを優先的に検出）として自動判定しています。
+    「本文」は文書全体で最も出現数の多い（書体・サイズ）の組み合わせを基準とし、表題・氏名・所属・
+    ${hasRefs ? '引用/参考文献一覧（「引用文献」「参考文献」等の見出し以降すべて）' : '引用/参考文献一覧（見出しが検出されませんでした）'}
+    を除いた文字数を集計しています。段組・図表・脚注が複雑なPDFでは誤検出の可能性があるため、
+    重要な用途では目視でのご確認をおすすめします。
+  `;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function truncate(s, n){
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+</script>
+
+</body>
+</html>
