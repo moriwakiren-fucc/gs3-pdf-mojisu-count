@@ -305,6 +305,34 @@
   .role-tag.title{color:var(--hanko); border-color:var(--hanko);}
   .role-tag.name{color:var(--indigo); border-color:var(--indigo);}
 
+  /* ---------- pass / fail judgement colors ---------- */
+  :root{
+    --pass:#2E7D46;
+    --fail:#B23A2E;
+  }
+  .stat-value.judge-pass{color:var(--pass);}
+  .stat-value.judge-fail{color:var(--fail);}
+  .judge-pass{color:var(--pass) !important;}
+  .judge-fail{color:var(--fail) !important;}
+  .judge-icon{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:16px; height:16px;
+    border-radius:50%;
+    font-size:10px;
+    font-weight:700;
+    font-family:"JetBrains Mono", monospace;
+    margin-left:6px;
+    vertical-align:middle;
+  }
+  .judge-icon.pass{background:rgba(46,125,70,.12); color:var(--pass);}
+  .judge-icon.fail{background:rgba(178,58,46,.12); color:var(--fail);}
+  .judge-reason{
+    font-size:11.5px;
+    font-family:"JetBrains Mono", monospace;
+    color:var(--pencil);
+    margin-top:2px;
+  }
+
   .excluded-note{
     margin-top:22px;
     font-size:13px;
@@ -469,12 +497,14 @@
             <th>フォント名</th>
             <th>サイズ</th>
             <th>出現数</th>
+            <th>判定</th>
           </tr>
         </thead>
         <tbody id="fontTableBody"></tbody>
       </table>
 
       <div class="excluded-note" id="excludedNote"></div>
+      <div class="judge-reason" id="judgeCriteriaNote"></div>
 
       <details class="raw-toggle">
         <summary>▸ 抽出データを見る（デバッグ用）</summary>
@@ -647,15 +677,23 @@ function buildCharRecords(page, pageIndex){
     const tm = item.transform;
     const size = tm ? Math.hypot(tm[2], tm[3]) || Math.hypot(tm[0], tm[1]) : 0;
     const top = tm ? tm[5] : 0; // y position (pdf space, origin bottom-left)
+    const x = tm ? tm[4] : 0; // x position of the start of this item
 
+    let charIndex = 0;
     for(const ch of str){
       records.push({
         ch,
         page: pageIndex,
         font: fontFamily,
         size: Math.round(size * 10) / 10,
-        top
+        top,
+        // approximate per-char x by offsetting from the item's start x using an
+        // average glyph width guess; only the line-minimum x is actually used
+        // downstream (to detect column margins), so this approximation is safe.
+        x: x + charIndex * size * 0.9,
+        itemStartX: x
       });
+      charIndex++;
     }
     // represent inter-item spacing/newlines minimally; item.hasEOL marks line breaks
   }
@@ -679,16 +717,91 @@ function analyzeDocument(pages){
   // Sort lines top-to-bottom on the page: in PDF space, larger 'top' (y) = higher on page.
   const sortedLineKeys = Array.from(lineMap.keys()).sort((a,b) => b - a);
 
-  // Find the body-start line: the first line whose modal font size is close to the
-  // "common" body size across the whole doc (computed below), OR whichever line
-  // starts with a numbering pattern like "1．" "１." "はじめに" etc.
-  // Simpler robust heuristic: header block = the first N lines (typically 1-4)
-  // that have a font size >= 1.15x the document's most common font size,
-  // OR are among the first 4 lines AND are short (<=40 chars) — this captures
-  // title (large), name, and seminar/affiliation line even if same size as body,
-  // as long as they precede the first long paragraph line.
+  // Walk lines from the top of page 1 and detect the header block (title / name /
+  // affiliation) using LEFT-MARGIN position rather than font size alone. Body
+  // paragraphs — even in a two-column layout — reliably start flush with one of
+  // a small number of recurring left margins (one per column). Title/name/
+  // affiliation lines are typically centered or indented differently from any
+  // body column margin. So: find the most common line-start x positions across
+  // the page (candidate column margins), then take all lines from the top of
+  // the page up to (not including) the first line whose start x lands on one of
+  // those margins.
+  const MARGIN_TOL = 4; // points
 
-  // Compute global font-size histogram (whole doc) to find "body size"
+  // Collect (lineKey -> minX) for every line with a decent amount of text, to
+  // find the recurring column margins.
+  const lineMinX = new Map();
+  for(const key of sortedLineKeys){
+    const recs = lineMap.get(key);
+    const text = recs.map(r=>r.ch).join('');
+    if(text.trim().length === 0) continue;
+    const minX = Math.min(...recs.map(r => r.itemStartX));
+    lineMinX.set(key, minX);
+  }
+  const substantialLines = sortedLineKeys.filter(k => {
+    const recs = lineMap.get(k);
+    return recs.map(r=>r.ch).join('').trim().length > 15;
+  });
+  const marginCounts = new Map();
+  for(const key of substantialLines){
+    const rx = Math.round(lineMinX.get(key));
+    marginCounts.set(rx, (marginCounts.get(rx)||0) + 1);
+  }
+  const columnMargins = Array.from(marginCounts.entries())
+    .filter(([x, count]) => count >= 3)
+    .sort((a,b) => b[1]-a[1])
+    .slice(0, 4)
+    .map(([x]) => x);
+
+  let headerLineKeys = [];
+  for(const key of sortedLineKeys){
+    const recs = lineMap.get(key);
+    const text = recs.map(r=>r.ch).join('');
+    const trimmed = text.trim();
+    if(trimmed.length === 0) continue; // skip blank spacer lines
+    const minX = lineMinX.get(key);
+    const atColumnMargin = columnMargins.length > 0 && columnMargins.some(m => Math.abs(minX - m) <= MARGIN_TOL);
+    if(atColumnMargin){
+      break; // reached the start of real body text
+    }
+    headerLineKeys.push(key);
+    if(headerLineKeys.length >= 6) break; // safety cap
+  }
+  // Fallback: if no column margins were confidently detected (e.g. very short
+  // document, single-column with unusual layout), fall back to the previous
+  // font-size-based rule so we still produce a reasonable header block.
+  if(columnMargins.length === 0){
+    headerLineKeys = [];
+    const sizeCounts = new Map();
+    for(const r of allPageRecords.flat()){
+      sizeCounts.set(r.size, (sizeCounts.get(r.size)||0) + 1);
+    }
+    let fbBodySize = null, fbBodyCount = -1;
+    for(const [size, count] of sizeCounts) if(count > fbBodyCount){ fbBodyCount = count; fbBodySize = size; }
+    let allowedOneMeta = true;
+    for(const key of sortedLineKeys){
+      const recs = lineMap.get(key);
+      const text = recs.map(r=>r.ch).join('');
+      const trimmed = text.trim();
+      if(trimmed.length === 0) continue;
+      const modalSize = modeOf(recs.map(r=>r.size));
+      const isBodySize = Math.abs(modalSize - fbBodySize) < 0.3;
+      const looksLikeSectionHeading = /^[0-9１-９1-9][\.．]/.test(trimmed);
+      const isShort = trimmed.length <= 30;
+      if(!isBodySize){
+        headerLineKeys.push(key);
+      } else if(headerLineKeys.length > 0 && isShort && !looksLikeSectionHeading && allowedOneMeta){
+        headerLineKeys.push(key);
+        allowedOneMeta = false;
+      } else {
+        break;
+      }
+      if(headerLineKeys.length >= 6) break;
+    }
+  }
+
+  // Compute global font-size histogram (whole doc) to find "body size", used
+  // later for the body-font pass/fail check and for classifying header lines.
   const allRecords = allPageRecords.flat();
   const sizeCounts = new Map();
   for(const r of allRecords){
@@ -698,29 +811,6 @@ function analyzeDocument(pages){
   let bodySize = null, bodySizeCount = -1;
   for(const [size, count] of sizeCounts){
     if(count > bodySizeCount){ bodySizeCount = count; bodySize = size; }
-  }
-
-  // Walk lines from top; a line belongs to the "header block" (title/name/seminar)
-  // if it occurs before the first line whose length exceeds ~40 chars AND whose
-  // modal size equals bodySize (i.e., the first real body paragraph line).
-  let headerLineKeys = [];
-  let bodyStartFound = false;
-  for(const key of sortedLineKeys){
-    if(bodyStartFound) break;
-    const recs = lineMap.get(key);
-    const text = recs.map(r=>r.ch).join('');
-    const trimmed = text.trim();
-    if(trimmed.length === 0) continue; // skip blank spacer lines but don't count as body start
-    const modalSize = modeOf(recs.map(r=>r.size));
-    const looksLikeBodyParagraph = trimmed.length > 40 && Math.abs(modalSize - bodySize) < 0.3;
-    const looksLikeSectionHeading = /^[0-9１-９1-9][\.．]/.test(trimmed) && trimmed.length < 30;
-    if(looksLikeBodyParagraph || looksLikeSectionHeading){
-      bodyStartFound = true;
-      break;
-    }
-    headerLineKeys.push(key);
-    // safety cap: header block shouldn't exceed ~6 lines
-    if(headerLineKeys.length >= 6) { bodyStartFound = true; break; }
   }
 
   const headerRecords = headerLineKeys.flatMap(k => lineMap.get(k));
@@ -835,14 +925,64 @@ function linesToText(records){
 }
 
 function fmtFontRow(entry){
-  if(!entry) return { font: '—', size: '—' };
-  return { font: entry.font.replace(/^.*\+/, ''), size: entry.size ? entry.size.toFixed(1) + 'pt' : '—' };
+  if(!entry) return { font: '—', size: '—', rawFont: '', rawSize: null };
+  return {
+    font: entry.font.replace(/^.*\+/, ''),
+    size: entry.size ? entry.size.toFixed(1) + 'pt' : '—',
+    rawFont: entry.font.replace(/^.*\+/, ''),
+    rawSize: entry.size
+  };
+}
+
+// Classify a (subsetted) font name as Gothic (ゴシック) or Mincho (明朝) family,
+// based on common Japanese font naming conventions. Returns 'gothic', 'mincho',
+// or 'unknown' if neither pattern is recognized.
+function classifyFontFamily(fontName){
+  if(!fontName) return 'unknown';
+  const n = fontName.toLowerCase();
+  const gothicPatterns = ['gothic', 'goth', 'ゴシック', 'メイリオ', 'meiryo', 'yu gothic', 'yugothic', 'hiragino kaku', 'noto sans'];
+  const minchoPatterns = ['mincho', '明朝', 'ms-mincho', 'ms mincho', 'yu mincho', 'yumincho', 'hiragino mincho', 'noto serif', 'rincho', 'mincyo'];
+  if(minchoPatterns.some(p => n.includes(p))) return 'mincho';
+  if(gothicPatterns.some(p => n.includes(p))) return 'gothic';
+  return 'unknown';
+}
+
+function sizeMatches(size, target, tol){
+  if(size === null || size === undefined) return false;
+  return Math.abs(size - target) <= (tol !== undefined ? tol : 0.15);
+}
+
+function judgeIcon(pass){
+  return `<span class="judge-icon ${pass ? 'pass' : 'fail'}">${pass ? '✓' : '✕'}</span>`;
 }
 
 function renderResults(a, filename, numPages){
   results.classList.add('active');
 
+  // ---- Judgements ----
+  const charCountPass = a.charCount >= 3000;
+
+  const titleTop = fmtFontRow(a.titleFonts[0]);
+  const titleFamily = classifyFontFamily(titleTop.rawFont);
+  const titleFontPass = titleFamily === 'gothic';
+  const titleSizePass = sizeMatches(titleTop.rawSize, 16);
+
+  const nameTop = fmtFontRow(a.nameFonts[0]);
+  const nameFamily = classifyFontFamily(nameTop.rawFont);
+  const nameFontPass = nameFamily === 'mincho';
+  const nameSizePass = sizeMatches(nameTop.rawSize, 12);
+
+  const semTop = fmtFontRow(a.seminarFonts[0]);
+  const seminarSizePass = a.seminarFonts.length ? sizeMatches(semTop.rawSize, 10.5) : null;
+
+  const bodyTop = fmtFontRow(a.bodyFonts[0]);
+  const bodySizePass = sizeMatches(bodyTop.rawSize, 10, 0.15) || sizeMatches(bodyTop.rawSize, 10.5, 0.15);
+
+  // char count card color
   charCountEl.innerHTML = (a.charCount.toLocaleString('ja-JP')) + '<span class="unit">字</span>';
+  charCountEl.classList.toggle('judge-pass', charCountPass);
+  charCountEl.classList.toggle('judge-fail', !charCountPass);
+
   pageCountEl.innerHTML = numPages + '<span class="unit">頁</span>';
   pageSubEl.textContent = a.refFound
     ? `参考文献はページ${a.refPageIdx+1}以降として検出`
@@ -854,21 +994,34 @@ function renderResults(a, filename, numPages){
 
   // font table rows
   const rows = [];
-  const titleTop = fmtFontRow(a.titleFonts[0]);
-  rows.push(rowHtml('title', 'タイトル', a.titleText, titleTop, a.titleFonts.reduce((s,e)=>s+e.count,0)));
+  rows.push(rowHtml('title', 'タイトル', a.titleText, titleTop, a.titleFonts.reduce((s,e)=>s+e.count,0),
+    [
+      { pass: titleFontPass, label: `書体：${titleFamily === 'gothic' ? 'ゴシック' : titleFamily === 'mincho' ? '明朝' : '不明'}` },
+      { pass: titleSizePass, label: `サイズ：16pt${titleSizePass ? '' : '想定'}` }
+    ]));
 
-  const nameTop = fmtFontRow(a.nameFonts[0]);
-  rows.push(rowHtml('name', '氏名', a.nameText, nameTop, a.nameFonts.reduce((s,e)=>s+e.count,0)));
+  rows.push(rowHtml('name', '氏名', a.nameText, nameTop, a.nameFonts.reduce((s,e)=>s+e.count,0),
+    [
+      { pass: nameFontPass, label: `書体：${nameFamily === 'mincho' ? '明朝' : nameFamily === 'gothic' ? 'ゴシック' : '不明'}` },
+      { pass: nameSizePass, label: `サイズ：12pt${nameSizePass ? '' : '想定'}` }
+    ]));
 
   if(a.seminarFonts.length){
-    const semTop = fmtFontRow(a.seminarFonts[0]);
-    rows.push(rowHtml('seminar', 'ゼミ名等', a.seminarText, semTop, a.seminarFonts.reduce((s,e)=>s+e.count,0)));
+    rows.push(rowHtml('seminar', 'ゼミ名等', a.seminarText, semTop, a.seminarFonts.reduce((s,e)=>s+e.count,0),
+      [
+        { pass: seminarSizePass, label: `サイズ：10.5pt${seminarSizePass ? '' : '想定'}` }
+      ]));
   }
 
-  const bodyTop = fmtFontRow(a.bodyFonts[0]);
-  rows.push(rowHtml('body', '本文（最頻出）', '', bodyTop, a.bodyFonts.reduce((s,e)=>s+e.count,0)));
+  rows.push(rowHtml('body', '本文（最頻出）', '', bodyTop, a.bodyFonts.reduce((s,e)=>s+e.count,0),
+    [
+      { pass: bodySizePass, label: `サイズ：10/10.5pt${bodySizePass ? '' : '想定'}` }
+    ]));
 
   fontTableBody.innerHTML = rows.join('');
+
+  document.getElementById('judgeCriteriaNote').innerHTML =
+    '判定基準：本文3,000字以上／タイトルはゴシック体・16pt／氏名は明朝体・12pt／ゼミ名は10.5pt／本文は10ptまたは10.5ptを基準としています。';
 
   excludedNote.innerHTML = `<strong>除外内訳：</strong> タイトル・氏名・所属ブロック ${a.debug.excludedHeaderCount.toLocaleString('ja-JP')}字、` +
     (a.refFound ? `参考文献セクション以降 ${a.debug.excludedRefCount.toLocaleString('ja-JP')}字` : '参考文献セクションは検出されませんでした') +
@@ -881,19 +1034,26 @@ function renderResults(a, filename, numPages){
     detectedName: a.nameText,
     detectedSeminar: a.seminarText,
     bodyTopFonts: a.bodyFonts.slice(0,5),
+    judgements: {
+      charCountPass, titleFontPass, titleSizePass, nameFontPass, nameSizePass, seminarSizePass, bodySizePass
+    },
     debug: a.debug
   }, null, 2);
 
   document.getElementById('results-section').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
-function rowHtml(roleClass, roleLabel, textPreview, fontInfo, count){
+function rowHtml(roleClass, roleLabel, textPreview, fontInfo, count, judgements){
   const preview = textPreview ? `<div style="font-size:11.5px;color:var(--pencil);margin-top:2px;">「${escapeHtml(truncate(textPreview, 22))}」</div>` : '';
+  const judgeCell = (judgements || []).map(j =>
+    `<div class="${j.pass ? 'judge-pass' : 'judge-fail'}" style="display:flex;align-items:center;white-space:nowrap;">${j.label}${judgeIcon(j.pass)}</div>`
+  ).join('');
   return `<tr>
     <td><span class="role-tag ${roleClass}">${roleLabel}</span>${preview}</td>
     <td class="mono">${escapeHtml(fontInfo.font)}</td>
     <td class="mono">${fontInfo.size}</td>
     <td class="mono">${count.toLocaleString('ja-JP')}</td>
+    <td>${judgeCell}</td>
   </tr>`;
 }
 
