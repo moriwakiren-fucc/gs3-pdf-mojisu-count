@@ -205,11 +205,20 @@
     font-weight: bold;
     color: var(--ink);
     line-height: 1;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
   }
   .char-count-block .big-num .unit{
     font-size: 20px;
     margin-left: 4px;
     color: var(--ink-soft);
+  }
+  .char-count-block .big-num .judge-mark{
+    font-size: 13px;
+    font-weight: normal;
+    letter-spacing: 0.03em;
   }
   .char-count-block .desc{
     font-size: 13px;
@@ -257,6 +266,96 @@
     color: var(--vermilion-deep);
   }
   table.spec-table tr:hover td{ background: rgba(168,66,46,0.04); }
+
+  /* judgement coloring */
+  .judge-ok{
+    color: #1e7a34 !important;
+    font-weight: 700;
+  }
+  .judge-ng{
+    color: #b8281c !important;
+    font-weight: 700;
+  }
+  .judge-mark{
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    margin-left: 8px;
+    letter-spacing: 0.05em;
+  }
+  .char-count-block.judge-ok .big-num,
+  .char-count-block.judge-ok .big-num .unit{
+    color: #1e7a34;
+  }
+  .char-count-block.judge-ng .big-num,
+  .char-count-block.judge-ng .big-num .unit{
+    color: #b8281c;
+  }
+  .char-count-block{
+    border-left-color: var(--vermilion);
+  }
+  .char-count-block.judge-ok{ border-left-color: #1e7a34; }
+  .char-count-block.judge-ng{ border-left-color: #b8281c; }
+
+  /* multi-file support */
+  .file-result{
+    margin-top: 64px;
+    padding-top: 8px;
+  }
+  .file-result + .file-result{
+    border-top: 3px double var(--ink);
+    padding-top: 48px;
+  }
+  .file-result-head{
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+  .file-result-head .file-index{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--vermilion);
+    background: var(--paper-deep);
+    border: 1px solid var(--rule);
+    padding: 3px 9px;
+  }
+  .file-result-head .file-name{
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    word-break: break-all;
+  }
+  .file-result-head .file-summary{
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+  .file-list{
+    margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .file-list-item{
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .file-list-item .dot{
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--rule);
+    flex: none;
+  }
+  .file-list-item.done .dot{ background: #1e7a34; }
+  .file-list-item.error .dot{ background: #b8281c; }
+  .file-list-item.pending .dot{ background: var(--gold); }
 
   .font-tag-row{
     font-family: var(--mono);
@@ -352,69 +451,26 @@
     <span class="ruby-note">TITLE PAGE FONT INSPECTOR — 表題・氏名・所属・本文の書体を数える</span>
   </h1>
   <p class="lede">
-    PDFを1枚読み込むと、埋め込みフォントの実体を1文字ずつ調べます。表題・氏名・ゼミ名（所属）を自動で見分け、それぞれの書体名と文字サイズを表にします。あわせて、表題・氏名・参考文献一覧を除いた「本文」の文字数も数えます。すべてブラウザ内で処理し、ファイルはどこにも送信しません。
+    PDFを読み込むと（複数ファイルまとめて可）、埋め込みフォントの実体を1文字ずつ調べます。表題・氏名・ゼミ名（所属）を自動で見分け、それぞれの書体名と文字サイズを表にします。あわせて、表題・氏名・参考文献一覧を除いた「本文」の文字数も数えます。既定の基準（本文3000字以上、タイトルはゴシック16pt、氏名は明朝12pt、ゼミ名10.5pt、本文10／10.5pt）を満たす項目は緑、満たさない項目は赤で表示します。すべてブラウザ内で処理し、ファイルはどこにも送信しません。
   </p>
 </header>
 
 <main>
-  <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="PDFファイルを選択またはドロップ">
+  <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="PDFファイルを選択またはドロップ（複数可）">
     <div class="dz-mark">⎗</div>
-    <div class="dz-text">PDFをここにドロップ、またはクリックして選択</div>
+    <div class="dz-text">PDFをここにドロップ、またはクリックして選択（複数ファイル可）</div>
     <div class="dz-sub">.PDF ONLY — 処理はすべて端末内で完結します</div>
-    <input type="file" id="fileInput" accept="application/pdf">
+    <input type="file" id="fileInput" accept="application/pdf" multiple>
   </div>
   <div class="status-line" id="statusLine"></div>
+  <div class="file-list" id="fileList"></div>
 
-  <div id="results">
-
-    <div class="section-head">
-      <span class="num">01</span>
-      <h2>本文の文字数</h2>
-      <span class="rule"></span>
-    </div>
-    <div class="char-count-block">
-      <div class="big-num" id="bodyCharCount">—<span class="unit">字</span></div>
-      <div class="desc" id="bodyCharDesc"></div>
-    </div>
-    <div class="exclude-list" id="excludeList"></div>
-
-    <div class="section-head">
-      <span class="num">02</span>
-      <h2>表題・氏名のフォント名</h2>
-      <span class="rule"></span>
-    </div>
-    <table class="spec-table" id="nameTable">
-      <thead>
-        <tr><th>区分</th><th>該当テキスト</th><th>書体（フォント名）</th><th>サイズ</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <div class="section-head">
-      <span class="num">03</span>
-      <h2>表題・氏名・所属・本文の文字サイズ</h2>
-      <span class="rule"></span>
-    </div>
-    <table class="spec-table" id="sizeTable">
-      <thead>
-        <tr><th>区分</th><th>サンプル</th><th>サイズ（pt）</th><th>書体</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <div class="section-head">
-      <span class="num">04</span>
-      <h2>文書全体のフォント内訳</h2>
-      <span class="rule"></span>
-    </div>
-    <div class="breakdown-chart" id="breakdownChart"></div>
-
-    <div class="note-box" id="noteBox"></div>
-  </div>
+  <div id="results"></div>
 </main>
 
 <footer>
-  PDF.js による解析 — ブラウザ内処理 / 検出結果はPDFの内部構造（埋め込みフォント名・文字座標）に基づく推定です。表題・氏名・所属・参考文献の判定はレイアウト上の手がかり（フォントサイズ・位置・記号）による自動判定のため、文書によっては手動確認を推奨します。
+  PDF.js による解析 — ブラウザ内処理 / 検出結果はPDFの内部構造（埋め込みフォント名・文字座標）に基づく推定です。表題・氏名・所属・参考文献の判定はレイアウト上の手がかり（フォントサイズ・位置・記号）による自動判定のため、文書によっては手動確認を推奨します。<br><br>
+  判定基準 — 本文文字数: 3000字以上／タイトル書体: ゴシック体／タイトルサイズ: 16pt／氏名書体: 明朝体／氏名サイズ: 12pt／ゼミ名（所属）サイズ: 10.5pt／本文サイズ: 10pt または 10.5pt。基準を満たす項目は緑、満たさない項目は赤で表示されます。
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -425,6 +481,40 @@ const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const statusLine = document.getElementById('statusLine');
 const results = document.getElementById('results');
+const fileListEl = document.getElementById('fileList');
+
+// --- Judgement thresholds (要望に基づく既定基準) ---
+const CRITERIA = {
+  bodyCharMin: 3000,       // 本文文字数 3000字以上
+  titleSize: 16,           // タイトルフォントサイズ 16pt
+  nameSize: 12,            // 名前フォントサイズ 12pt
+  affSize: 10.5,           // ゼミ名フォントサイズ 10.5pt
+  bodySizes: [10, 10.5],   // 本文フォントサイズ 10pt または 10.5pt
+};
+const SIZE_TOL = 0.15; // pt単位の丸め誤差許容
+
+function isGothicFont(fontName){
+  if(!fontName) return false;
+  const f = fontName.toLowerCase();
+  return /gothic|gosic|goshic|pgothic|ゴシック|meiryo|yugoth|yu gothic|hiragino.*(sans|kaku)|noto sans|noto sans jp|ms\s?pゴシック|ms\s?ゴシック/i.test(f);
+}
+function isMinchoFont(fontName){
+  if(!fontName) return false;
+  const f = fontName.toLowerCase();
+  return /mincho|明朝|yumin|yu mincho|hiragino.*mincho|ms\s?p明朝|ms\s?明朝|rui?mincho|noto serif/i.test(f);
+}
+function fontsMatch(fonts, testFn){
+  if(!fonts || fonts.length === 0) return false;
+  return fonts.some(testFn);
+}
+function sizeMatches(size, target){
+  if(size === null || size === undefined) return false;
+  return Math.abs(size - target) < SIZE_TOL;
+}
+function sizeMatchesAny(size, targets){
+  if(size === null || size === undefined) return false;
+  return targets.some(t => Math.abs(size - t) < SIZE_TOL);
+}
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('keydown', (e) => {
@@ -435,12 +525,14 @@ dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
 dropzone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropzone.classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if(f) handleFile(f);
+  const files = [...e.dataTransfer.files].filter(f =>
+    f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+  if(files.length) handleFiles(files);
+  else setStatus('PDFファイルを選択してください。', true);
 });
 fileInput.addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  if(f) handleFile(f);
+  const files = [...e.target.files];
+  if(files.length) handleFiles(files);
 });
 
 function setStatus(msg, isErr){
@@ -457,68 +549,94 @@ function isCountableChar(ch){
   return true;
 }
 
-async function handleFile(file){
-  if(file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){
+async function handleFiles(files){
+  const pdfFiles = files.filter(f =>
+    f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+  if(pdfFiles.length === 0){
     setStatus('PDFファイルを選択してください。', true);
     return;
   }
-  results.style.display = 'none';
-  setStatus('読み込み中…');
+
+  results.innerHTML = '';
+  fileListEl.innerHTML = '';
+  document.getElementById('filenameDisplay')?.remove();
+
+  const listItems = pdfFiles.map((f) => {
+    const item = document.createElement('div');
+    item.className = 'file-list-item pending';
+    item.innerHTML = `<span class="dot"></span><span class="fname">${escapeHtml(f.name)}</span><span class="fstatus">待機中…</span>`;
+    fileListEl.appendChild(item);
+    return item;
+  });
+
+  setStatus(`読み込み中… (0 / ${pdfFiles.length})`);
   const marker = document.createElement('span');
   marker.className = 'spinner';
   statusLine.prepend(marker);
 
-  try{
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let doneCount = 0;
+  let okCount = 0;
 
-    // Collect all text runs across all pages, with position + font info.
-    // Each "run" = one item from getTextContent(), which PDF.js groups by
-    // contiguous same-font same-size glyphs.
-    const allRuns = [];
-    for(let p = 1; p <= pdf.numPages; p++){
-      const page = await pdf.getPage(p);
-      const content = await page.getTextContent();
-      const viewport = page.getViewport({ scale: 1 });
+  for(let idx = 0; idx < pdfFiles.length; idx++){
+    const file = pdfFiles[idx];
+    const item = listItems[idx];
+    item.classList.remove('pending');
+    item.querySelector('.fstatus').textContent = '解析中…';
 
-      for(const item of content.items){
-        if(item.str === undefined) continue;
-        const fontObj = content.styles ? content.styles[item.fontName] : null;
-        const realFontName = (fontObj && fontObj.fontFamily) ? fontObj.fontFamily : item.fontName;
-        // transform[3] approximates the glyph height in PDF pt (font size)
-        const sizePt = Math.abs(item.transform[0]) || Math.abs(item.transform[3]) || 0;
-        allRuns.push({
-          page: p,
-          text: item.str,
-          fontKey: item.fontName,
-          fontName: realFontName,
-          size: Math.round(sizePt * 10) / 10,
-          y: item.transform[5],
-          x: item.transform[4],
-          pageHeight: viewport.height
-        });
+    try{
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+      // Collect all text runs across all pages, with position + font info.
+      // Each "run" = one item from getTextContent(), which PDF.js groups by
+      // contiguous same-font same-size glyphs.
+      const allRuns = [];
+      for(let p = 1; p <= pdf.numPages; p++){
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const viewport = page.getViewport({ scale: 1 });
+
+        for(const it of content.items){
+          if(it.str === undefined) continue;
+          const fontObj = content.styles ? content.styles[it.fontName] : null;
+          const realFontName = (fontObj && fontObj.fontFamily) ? fontObj.fontFamily : it.fontName;
+          const sizePt = Math.abs(it.transform[0]) || Math.abs(it.transform[3]) || 0;
+          allRuns.push({
+            page: p,
+            text: it.str,
+            fontKey: it.fontName,
+            fontName: realFontName,
+            size: Math.round(sizePt * 10) / 10,
+            y: it.transform[5],
+            x: it.transform[4],
+            pageHeight: viewport.height
+          });
+        }
       }
+
+      if(allRuns.length === 0){
+        item.className = 'file-list-item error';
+        item.querySelector('.fstatus').textContent = 'テキスト抽出不可（画像PDFの可能性）';
+      } else {
+        const card = analyze(allRuns, file.name, idx + 1, pdfFiles.length);
+        results.appendChild(card);
+        item.className = 'file-list-item done';
+        item.querySelector('.fstatus').textContent = '完了';
+        okCount++;
+      }
+    }catch(err){
+      console.error(err);
+      item.className = 'file-list-item error';
+      item.querySelector('.fstatus').textContent = 'エラー: ' + err.message;
     }
 
-    if(allRuns.length === 0){
-      setStatus('テキストを抽出できませんでした（画像PDFの可能性があります）。', true);
-      return;
-    }
+    doneCount++;
+    setStatus(`読み込み中… (${doneCount} / ${pdfFiles.length})`);
+  }
 
-    analyze(allRuns, file.name);
-    document.getElementById('filenameDisplay')?.remove();
-    const tag = document.createElement('div');
-    tag.className = 'filename-tag';
-    tag.id = 'filenameDisplay';
-    tag.textContent = file.name;
-    setStatus('');
-    dropzone.appendChild(tag);
-    results.style.display = 'block';
+  setStatus(`完了: ${okCount} / ${pdfFiles.length} 件を解析しました。`, okCount < pdfFiles.length);
+  if(okCount > 0){
     results.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  }catch(err){
-    console.error(err);
-    setStatus('解析中にエラーが発生しました: ' + err.message, true);
   }
 }
 
@@ -542,7 +660,7 @@ async function handleFile(file){
 //    markers (引用文献 / 参考文献 / 参考資料 / Bibliography / References)
 //    onward is excluded from the body character count.
 
-function analyze(runs, filename){
+function analyze(runs, filename, fileIndex, fileTotal){
   const page1Runs = runs.filter(r => r.page === 1);
   const pageHeight = page1Runs.length ? page1Runs[0].pageHeight : 0;
 
@@ -726,24 +844,97 @@ function analyze(runs, filename){
     bodyCount += chars.length;
   }
 
-  // --- Render ---
-  renderBodyCount(bodyCount, titleCount, nameCount, affCount, refCount, refStartIndex !== -1);
-  renderNameTable(titleText, titleFonts, titleSize, nameText, nameFonts, nameSize, affText, affFonts, affSize);
-  renderSizeTable(titleText, titleFonts, titleSize, nameText, nameSize, nameFonts, affText, affSize, affFonts, bodyStyle);
-  renderBreakdown(freqSorted, runs);
-  renderNote(filename, refStartIndex !== -1);
+  // --- Judgements ---
+  const judgeBody = bodyCount >= CRITERIA.bodyCharMin;
+  const judgeTitleFont = fontsMatch(titleFonts, isGothicFont);
+  const judgeTitleSize = sizeMatches(titleSize, CRITERIA.titleSize);
+  const judgeNameFont = fontsMatch(nameFonts, isMinchoFont);
+  const judgeNameSize = sizeMatches(nameSize, CRITERIA.nameSize);
+  const judgeAffSize = affSize !== null ? sizeMatches(affSize, CRITERIA.affSize) : null; // null = 所属未検出
+  const judgeBodySize = sizeMatchesAny(bodyStyle.size, CRITERIA.bodySizes);
+
+  const judgements = {
+    body: judgeBody, titleFont: judgeTitleFont, titleSize: judgeTitleSize,
+    nameFont: judgeNameFont, nameSize: judgeNameSize, affSize: judgeAffSize, bodySize: judgeBodySize
+  };
+
+  // --- Build card ---
+  const card = document.createElement('div');
+  card.className = 'file-result';
+
+  const passCount = Object.values(judgements).filter(v => v === true).length;
+  const totalChecks = Object.values(judgements).filter(v => v !== null).length;
+  const allPass = passCount === totalChecks;
+
+  card.innerHTML = `
+    <div class="file-result-head">
+      <span class="file-index">${fileIndex} / ${fileTotal}</span>
+      <span class="file-name">${escapeHtml(filename)}</span>
+      <span class="file-summary ${allPass ? 'judge-ok' : 'judge-ng'}">${allPass ? '✓ 全項目クリア' : `△ ${passCount}/${totalChecks} 項目クリア`}</span>
+    </div>
+
+    <div class="section-head">
+      <span class="num">01</span>
+      <h2>本文の文字数</h2>
+      <span class="rule"></span>
+    </div>
+    <div class="char-count-block ${judgeBody ? 'judge-ok' : 'judge-ng'}">
+      <div class="big-num">${bodyCount.toLocaleString()}<span class="unit">字</span><span class="judge-mark">${judgeBody ? '[基準クリア: 3000字以上]' : '[基準未達: 3000字以上が必要]'}</span></div>
+      <div class="desc"></div>
+    </div>
+    <div class="exclude-list"></div>
+
+    <div class="section-head">
+      <span class="num">02</span>
+      <h2>表題・氏名のフォント名</h2>
+      <span class="rule"></span>
+    </div>
+    <table class="spec-table">
+      <thead>
+        <tr><th>区分</th><th>該当テキスト</th><th>書体（フォント名）</th><th>サイズ</th></tr>
+      </thead>
+      <tbody class="nameTableBody"></tbody>
+    </table>
+
+    <div class="section-head">
+      <span class="num">03</span>
+      <h2>表題・氏名・所属・本文の文字サイズ</h2>
+      <span class="rule"></span>
+    </div>
+    <table class="spec-table">
+      <thead>
+        <tr><th>区分</th><th>サンプル</th><th>サイズ（pt）</th><th>書体</th></tr>
+      </thead>
+      <tbody class="sizeTableBody"></tbody>
+    </table>
+
+    <div class="section-head">
+      <span class="num">04</span>
+      <h2>文書全体のフォント内訳</h2>
+      <span class="rule"></span>
+    </div>
+    <div class="breakdown-chart"></div>
+
+    <div class="note-box"></div>
+  `;
+
+  renderBodyCount(card, bodyCount, titleCount, nameCount, affCount, refCount, refStartIndex !== -1);
+  renderNameTable(card, titleText, titleFonts, titleSize, nameText, nameFonts, nameSize, affText, affFonts, affSize, judgements);
+  renderSizeTable(card, titleText, titleFonts, titleSize, nameText, nameSize, nameFonts, affText, affSize, affFonts, bodyStyle, judgements);
+  renderBreakdown(card, freqSorted, runs);
+  renderNote(card, filename, refStartIndex !== -1);
+
+  return card;
 }
 
-function renderBodyCount(bodyCount, titleCount, nameCount, affCount, refCount, hasRefs){
-  document.getElementById('bodyCharCount').innerHTML = bodyCount.toLocaleString() + '<span class="unit">字</span>';
-  document.getElementById('bodyCharDesc').innerHTML =
+function renderBodyCount(card, bodyCount, titleCount, nameCount, affCount, refCount, hasRefs){
+  card.querySelector('.desc').innerHTML =
     `表題・氏名・所属${hasRefs ? '・引用/参考文献一覧' : ''}を除いた本文の文字数です（空白・改行は含みません）。<br>` +
     `内訳 — 表題 <b>${titleCount}</b>字 ／ 氏名 <b>${nameCount}</b>字 ／ 所属 <b>${affCount}</b>字` +
     (hasRefs ? ` ／ 引用・参考文献 <b>${refCount}</b>字` : ' ／ 引用・参考文献セクション未検出') +
     ` を除外。`;
 
-  const list = document.getElementById('excludeList');
-  list.innerHTML = `
+  card.querySelector('.exclude-list').innerHTML = `
     <span>除外: 表題 (${titleCount}字)</span>
     <span>除外: 氏名 (${nameCount}字)</span>
     <span>除外: 所属 (${affCount}字)</span>
@@ -756,51 +947,84 @@ function shortFontLabel(f){
   return f.replace(/^[A-Z]{6}\+/, ''); // strip PDF subset prefix like ABCDEF+
 }
 
-function renderNameTable(titleText, titleFonts, titleSize, nameText, nameFonts, nameSize, affText, affFonts, affSize){
-  const tbody = document.querySelector('#nameTable tbody');
+function judgeCellClass(v){
+  if(v === true) return 'judge-ok';
+  if(v === false) return 'judge-ng';
+  return '';
+}
+function judgeMarkHtml(v, okLabel, ngLabel){
+  if(v === null) return '<span class="judge-mark">（所属未検出）</span>';
+  return `<span class="judge-mark">${v ? '✓ ' + okLabel : '✗ ' + ngLabel}</span>`;
+}
+
+function renderNameTable(card, titleText, titleFonts, titleSize, nameText, nameFonts, nameSize, affText, affFonts, affSize, judgements){
+  const tbody = card.querySelector('.nameTableBody');
   const rows = [
-    { label: '表題', text: titleText, fonts: titleFonts, size: titleSize },
-    { label: '氏名', text: nameText, fonts: nameFonts, size: nameSize },
+    {
+      label: '表題', text: titleText, fonts: titleFonts,
+      fontClass: judgeCellClass(judgements.titleFont),
+      fontMark: judgeMarkHtml(judgements.titleFont, 'ゴシック体', 'ゴシック体ではありません')
+    },
+    {
+      label: '氏名', text: nameText, fonts: nameFonts,
+      fontClass: judgeCellClass(judgements.nameFont),
+      fontMark: judgeMarkHtml(judgements.nameFont, '明朝体', '明朝体ではありません')
+    },
   ];
   if(affText){
-    rows.push({ label: '所属（ゼミ等）', text: affText, fonts: affFonts, size: affSize });
+    rows.push({ label: '所属（ゼミ等）', text: affText, fonts: affFonts, fontClass: '', fontMark: '' });
   }
   tbody.innerHTML = rows.map(r => `
     <tr>
       <td>${r.label}</td>
       <td class="sample">${escapeHtml(r.text)}</td>
-      <td class="mono">${r.fonts.map(shortFontLabel).join(', ') || '—'}</td>
-      <td class="mono">${r.size !== null ? r.size + 'pt' : '—'}</td>
+      <td class="mono ${r.fontClass}">${r.fonts.map(shortFontLabel).join(', ') || '—'}${r.fontMark}</td>
     </tr>
   `).join('');
 }
 
-function renderSizeTable(titleText, titleFonts, titleSize, nameText, nameSize, nameFonts, affText, affSize, affFonts, bodyStyle){
-  const tbody = document.querySelector('#sizeTable tbody');
+function renderSizeTable(card, titleText, titleFonts, titleSize, nameText, nameSize, nameFonts, affText, affSize, affFonts, bodyStyle, judgements){
+  const tbody = card.querySelector('.sizeTableBody');
   const rows = [
-    { label: '表題', sample: titleText, size: titleSize, fonts: titleFonts },
-    { label: '氏名', sample: nameText, size: nameSize, fonts: nameFonts },
+    {
+      label: '表題', sample: titleText, size: titleSize, fonts: titleFonts,
+      sizeClass: judgeCellClass(judgements.titleSize),
+      sizeMark: judgeMarkHtml(judgements.titleSize, `${CRITERIA.titleSize}pt`, `${CRITERIA.titleSize}ptではありません`)
+    },
+    {
+      label: '氏名', sample: nameText, size: nameSize, fonts: nameFonts,
+      sizeClass: judgeCellClass(judgements.nameSize),
+      sizeMark: judgeMarkHtml(judgements.nameSize, `${CRITERIA.nameSize}pt`, `${CRITERIA.nameSize}ptではありません`)
+    },
   ];
   if(affText){
-    rows.push({ label: '所属（ゼミ等）', sample: affText, size: affSize, fonts: affFonts });
+    rows.push({
+      label: '所属（ゼミ等）', sample: affText, size: affSize, fonts: affFonts,
+      sizeClass: judgeCellClass(judgements.affSize),
+      sizeMark: judgeMarkHtml(judgements.affSize, `${CRITERIA.affSize}pt`, `${CRITERIA.affSize}ptではありません`)
+    });
   }
-  rows.push({ label: '本文（最頻出）', sample: '（本文中で最も多く使われた書体・サイズ）', size: bodyStyle.size, fonts: [bodyStyle.fontName] });
+  rows.push({
+    label: '本文（最頻出）', sample: '（本文中で最も多く使われた書体・サイズ）', size: bodyStyle.size, fonts: [bodyStyle.fontName],
+    sizeClass: judgeCellClass(judgements.bodySize),
+    sizeMark: judgeMarkHtml(judgements.bodySize, `${CRITERIA.bodySizes.join('pt または ')}pt`, `${CRITERIA.bodySizes.join('pt / ')}ptのいずれでもありません`)
+  });
 
   tbody.innerHTML = rows.map(r => `
     <tr>
       <td>${r.label}</td>
       <td class="sample" style="font-size:${Math.max(12, Math.min(22, (r.size||14)))}px">${escapeHtml(truncate(r.sample, 20))}</td>
-      <td class="mono">${r.size !== null ? r.size + 'pt' : '—'}</td>
+      <td class="mono ${r.sizeClass}">${r.size !== null ? r.size + 'pt' : '—'}${r.sizeMark}</td>
       <td class="mono">${r.fonts.map(shortFontLabel).join(', ') || '—'}</td>
     </tr>
   `).join('');
 }
 
-function renderBreakdown(freqSorted, runs){
+function renderBreakdown(card, freqSorted, runs){
   const totalChars = freqSorted.reduce((s,f) => s + f.count, 0);
   const top = freqSorted.slice(0, 8);
   const maxCount = top[0] ? top[0].count : 1;
-  const chart = document.getElementById('breakdownChart');
+  const chart = card.querySelector('.breakdown-chart');
   chart.innerHTML = top.map(f => {
     const pct = (f.count / maxCount) * 100;
     const sharePct = totalChars ? ((f.count / totalChars) * 100).toFixed(1) : '0.0';
@@ -814,15 +1038,17 @@ function renderBreakdown(freqSorted, runs){
   }).join('');
 }
 
-function renderNote(filename, hasRefs){
-  const note = document.getElementById('noteBox');
+function renderNote(card, filename, hasRefs){
+  const note = card.querySelector('.note-box');
   note.innerHTML = `
     <b>判定方法について</b> — 「表題」はページ1冒頭付近で最大の文字サイズを持つ行、「氏名」は表題の直後に現れる行、
     「所属」はその次の行（〈 〉などの括弧書きを優先的に検出）として自動判定しています。
     「本文」は文書全体で最も出現数の多い（書体・サイズ）の組み合わせを基準とし、表題・氏名・所属・
     ${hasRefs ? '引用/参考文献一覧（「引用文献」「参考文献」等の見出し以降すべて）' : '引用/参考文献一覧（見出しが検出されませんでした）'}
     を除いた文字数を集計しています。段組・図表・脚注が複雑なPDFでは誤検出の可能性があるため、
-    重要な用途では目視でのご確認をおすすめします。
+    重要な用途では目視でのご確認をおすすめします。<br><br>
+    <b>色分けの基準</b> — 本文文字数3000字以上／タイトル書体ゴシック・16pt／氏名書体明朝・12pt／所属（ゼミ名）10.5pt／
+    本文サイズ10ptまたは10.5ptを満たす項目は<span class="judge-ok">緑</span>、満たさない項目は<span class="judge-ng">赤</span>で表示しています。
   `;
 }
 
