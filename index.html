@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>原稿点検 — PDF文字数・フォント解析</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600;700;900&family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F7F3EA;
+    --paper-2:#EFEADC;
+    --ink:#2B2B28;
+    --ink-soft:#5A564C;
+    --pencil:#8A8578;
+    --hanko:#B23A2E;
+    --hanko-dark:#8E2B22;
+    --indigo:#1F3A5F;
+    --grid-line:#00000014;
+    --grid-line-strong:#00000024;
+    --paper-shadow:0 1px 0 rgba(0,0,0,.04), 0 12px 30px -18px rgba(43,43,40,.35);
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Noto Sans JP", sans-serif;
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* subtle washi paper texture via layered gradients */
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    pointer-events:none;
+    z-index:0;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(178,58,46,.03), transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(31,58,95,.035), transparent 45%);
+  }
+
+  .wrap{max-width:960px; margin:0 auto; padding:0 28px; position:relative; z-index:1;}
+
+  /* ---------- Header / hero ---------- */
+  header.hero{
+    padding:64px 0 40px;
+    border-bottom:1px solid var(--grid-line-strong);
+  }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:10px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:12px; letter-spacing:.12em;
+    color:var(--hanko);
+    border:1px solid var(--hanko);
+    padding:4px 10px 4px 8px;
+    border-radius:2px;
+    text-transform:uppercase;
+  }
+  .eyebrow .dot{width:6px;height:6px;background:var(--hanko);border-radius:50%;display:inline-block;}
+
+  h1.title{
+    font-family:"Noto Serif JP", serif;
+    font-weight:900;
+    font-size:clamp(32px, 5.4vw, 54px);
+    line-height:1.25;
+    margin:22px 0 14px;
+    letter-spacing:.01em;
+  }
+  h1.title .accent{color:var(--hanko);}
+
+  p.lede{
+    font-size:16px;
+    color:var(--ink-soft);
+    max-width:56ch;
+    margin:0 0 8px;
+  }
+
+  .hero-grid-demo{
+    margin-top:36px;
+    display:flex;
+    align-items:center;
+    gap:22px;
+    flex-wrap:wrap;
+  }
+  .genkoyoushi{
+    display:grid;
+    grid-template-columns:repeat(10, 22px);
+    grid-auto-rows:22px;
+    gap:2px;
+    background:var(--grid-line-strong);
+    border:1px solid var(--grid-line-strong);
+    padding:2px;
+  }
+  .genkoyoushi .cell{
+    background:var(--paper);
+    display:flex; align-items:center; justify-content:center;
+    font-family:"Noto Serif JP", serif;
+    font-size:12px;
+    color:var(--ink);
+  }
+  .genkoyoushi .cell.filled{background:#fff; color:var(--hanko); font-weight:700;}
+  .hero-note{
+    font-family:"JetBrains Mono", monospace;
+    font-size:12.5px;
+    color:var(--pencil);
+    max-width:24ch;
+    line-height:1.6;
+  }
+
+  /* ---------- Sections generic ---------- */
+  section{padding:56px 0;}
+  .section-head{
+    display:flex; align-items:baseline; gap:14px;
+    margin-bottom:26px;
+  }
+  .section-num{
+    font-family:"JetBrains Mono", monospace;
+    font-size:13px; color:var(--pencil);
+    border:1px solid var(--grid-line-strong);
+    padding:2px 8px;
+  }
+  h2{
+    font-family:"Noto Serif JP", serif;
+    font-weight:700;
+    font-size:24px;
+    margin:0;
+  }
+
+  /* ---------- Upload area ---------- */
+  .dropzone{
+    border:1.5px dashed var(--grid-line-strong);
+    background:var(--paper-2);
+    border-radius:3px;
+    padding:40px 24px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+    position:relative;
+  }
+  .dropzone:hover, .dropzone.dragover{
+    border-color:var(--hanko);
+    background:#F1E7DF;
+  }
+  .dropzone input{display:none;}
+  .dz-icon{
+    width:44px; height:56px; margin:0 auto 16px;
+    border:2px solid var(--ink);
+    border-radius:2px;
+    position:relative;
+  }
+  .dz-icon::before{
+    content:"";
+    position:absolute; top:8px; left:6px; right:6px; height:2px; background:var(--ink);
+    box-shadow:0 6px 0 var(--ink), 0 12px 0 var(--ink), 0 18px 0 var(--pencil);
+  }
+  .dz-icon::after{
+    content:"PDF";
+    position:absolute; bottom:-9px; right:-10px;
+    background:var(--hanko); color:#fff;
+    font-family:"JetBrains Mono", monospace;
+    font-size:9px; font-weight:700;
+    padding:2px 4px;
+    border-radius:2px;
+    letter-spacing:.03em;
+  }
+  .dz-title{font-weight:600; font-size:16px; margin-bottom:6px;}
+  .dz-sub{font-size:13px; color:var(--pencil); font-family:"JetBrains Mono", monospace;}
+  .dz-filename{
+    margin-top:14px; font-family:"JetBrains Mono", monospace; font-size:13px;
+    color:var(--indigo); word-break:break-all;
+  }
+
+  .status-line{
+    display:flex; align-items:center; gap:10px;
+    margin-top:18px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:13px;
+    color:var(--ink-soft);
+    min-height:20px;
+  }
+  .spinner{
+    width:13px; height:13px;
+    border:2px solid var(--grid-line-strong);
+    border-top-color:var(--hanko);
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+    display:none;
+  }
+  .spinner.active{display:inline-block;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .error-box{
+    display:none;
+    margin-top:16px;
+    border:1px solid var(--hanko);
+    background:#FBEAE7;
+    color:var(--hanko-dark);
+    padding:14px 16px;
+    font-size:13.5px;
+    border-radius:2px;
+  }
+  .error-box.active{display:block;}
+
+  /* ---------- Results ---------- */
+  #results{display:none;}
+  #results.active{display:block;}
+
+  .stamp-badge{
+    display:inline-flex; align-items:center; gap:8px;
+    border:2px solid var(--hanko);
+    color:var(--hanko);
+    font-family:"Noto Serif JP", serif;
+    font-weight:900;
+    font-size:14px;
+    padding:5px 12px;
+    border-radius:3px;
+    transform:rotate(-2deg);
+    margin-bottom:22px;
+  }
+
+  .stat-row{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    margin-bottom:16px;
+  }
+  @media (max-width:600px){ .stat-row{grid-template-columns:1fr;} }
+
+  .stat-card{
+    background:#fff;
+    border:1px solid var(--grid-line-strong);
+    border-left:3px solid var(--indigo);
+    padding:20px 22px;
+    box-shadow:var(--paper-shadow);
+  }
+  .stat-card.hanko-border{border-left-color:var(--hanko);}
+  .stat-label{
+    font-family:"JetBrains Mono", monospace;
+    font-size:11.5px;
+    color:var(--pencil);
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    margin-bottom:8px;
+  }
+  .stat-value{
+    font-family:"Noto Serif JP", serif;
+    font-weight:900;
+    font-size:36px;
+    color:var(--ink);
+    line-height:1;
+  }
+  .stat-value .unit{
+    font-size:15px;
+    font-weight:500;
+    font-family:"Noto Sans JP", sans-serif;
+    color:var(--ink-soft);
+    margin-left:4px;
+  }
+  .stat-sub{
+    margin-top:8px;
+    font-size:12.5px;
+    color:var(--pencil);
+    line-height:1.5;
+  }
+
+  table.font-table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:6px;
+    background:#fff;
+    box-shadow:var(--paper-shadow);
+  }
+  table.font-table th, table.font-table td{
+    text-align:left;
+    padding:12px 16px;
+    border-bottom:1px solid var(--grid-line);
+    font-size:13.5px;
+  }
+  table.font-table th{
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--pencil);
+    background:var(--paper-2);
+    border-bottom:1px solid var(--grid-line-strong);
+  }
+  table.font-table td.mono{font-family:"JetBrains Mono", monospace; font-size:12.5px; color:var(--indigo);}
+  table.font-table tr:last-child td{border-bottom:none;}
+  .role-tag{
+    display:inline-block;
+    font-family:"JetBrains Mono", monospace;
+    font-size:10.5px;
+    padding:2px 7px;
+    border-radius:2px;
+    background:var(--paper-2);
+    color:var(--ink-soft);
+    border:1px solid var(--grid-line-strong);
+  }
+  .role-tag.title{color:var(--hanko); border-color:var(--hanko);}
+  .role-tag.name{color:var(--indigo); border-color:var(--indigo);}
+
+  .excluded-note{
+    margin-top:22px;
+    font-size:13px;
+    color:var(--pencil);
+    border-top:1px dashed var(--grid-line-strong);
+    padding-top:16px;
+  }
+  .excluded-note strong{color:var(--ink-soft); font-weight:600;}
+
+  details.raw-toggle{
+    margin-top:28px;
+    border:1px solid var(--grid-line-strong);
+    background:#fff;
+  }
+  details.raw-toggle summary{
+    cursor:pointer;
+    padding:12px 16px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:12.5px;
+    color:var(--ink-soft);
+    user-select:none;
+  }
+  details.raw-toggle summary:hover{color:var(--hanko);}
+  details.raw-toggle pre{
+    margin:0;
+    padding:16px;
+    border-top:1px solid var(--grid-line);
+    font-family:"JetBrains Mono", monospace;
+    font-size:11.5px;
+    color:var(--ink-soft);
+    overflow-x:auto;
+    max-height:280px;
+    overflow-y:auto;
+    background:var(--paper-2);
+  }
+
+  /* ---------- How it works ---------- */
+  .how-list{
+    display:grid;
+    gap:14px;
+  }
+  .how-item{
+    display:grid;
+    grid-template-columns:34px 1fr;
+    gap:14px;
+    align-items:start;
+  }
+  .how-num{
+    font-family:"Noto Serif JP", serif;
+    font-weight:900;
+    font-size:15px;
+    color:var(--hanko);
+    border:1px solid var(--hanko);
+    width:30px; height:30px;
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .how-body h3{
+    margin:0 0 4px;
+    font-size:14.5px;
+    font-weight:700;
+  }
+  .how-body p{
+    margin:0;
+    font-size:13.5px;
+    color:var(--ink-soft);
+  }
+
+  .caveat{
+    margin-top:32px;
+    font-size:12.5px;
+    color:var(--pencil);
+    border-left:2px solid var(--grid-line-strong);
+    padding-left:14px;
+  }
+
+  footer{
+    padding:30px 0 60px;
+    font-family:"JetBrains Mono", monospace;
+    font-size:11.5px;
+    color:var(--pencil);
+    border-top:1px solid var(--grid-line-strong);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto;}
+    .spinner{animation:none;}
+  }
+
+  a{color:var(--indigo);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow"><span class="dot"></span>PDF FORENSICS TOOL</span>
+    <h1 class="title">タイトル・氏名を除いた<br>本文は、<span class="accent">何字</span>か。</h1>
+    <p class="lede">探究論文やレポートのPDFをアップロードすると、タイトル・氏名・参考文献を除いた本文の文字数と、使用フォント（書体名・サイズ）を自動で解析します。</p>
+
+    <div class="hero-grid-demo">
+      <div class="genkoyoushi" id="heroGrid" aria-hidden="true"></div>
+      <div class="hero-note">原稿用紙のマス目のように、文字を一字ずつ数えます。</div>
+    </div>
+  </header>
+
+  <section id="upload-section">
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <h2>PDFをアップロード</h2>
+    </div>
+
+    <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="PDFファイルをアップロード">
+      <input type="file" id="fileInput" accept="application/pdf">
+      <div class="dz-icon"></div>
+      <div class="dz-title">クリックまたはドラッグ＆ドロップ</div>
+      <div class="dz-sub">.pdf ファイルのみ対応</div>
+      <div class="dz-filename" id="fileName"></div>
+    </div>
+
+    <div class="status-line">
+      <span class="spinner" id="spinner"></span>
+      <span id="statusText"></span>
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+  </section>
+
+  <section id="results-section">
+    <div id="results">
+      <div class="section-head">
+        <span class="section-num">02</span>
+        <h2>解析結果</h2>
+      </div>
+
+      <span class="stamp-badge" id="stampBadge">検 印 済</span>
+
+      <div class="stat-row">
+        <div class="stat-card hanko-border">
+          <div class="stat-label">本文の文字数</div>
+          <div class="stat-value" id="charCount">—<span class="unit">字</span></div>
+          <div class="stat-sub">タイトル・氏名・参考文献一覧を除いた合計</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">検出ページ数</div>
+          <div class="stat-value" id="pageCount">—<span class="unit">頁</span></div>
+          <div class="stat-sub" id="pageSub">—</div>
+        </div>
+      </div>
+
+      <div class="section-head" style="margin-top:10px;">
+        <span class="section-num">03</span>
+        <h2>使用フォント</h2>
+      </div>
+
+      <table class="font-table">
+        <thead>
+          <tr>
+            <th>要素</th>
+            <th>フォント名</th>
+            <th>サイズ</th>
+            <th>出現数</th>
+          </tr>
+        </thead>
+        <tbody id="fontTableBody"></tbody>
+      </table>
+
+      <div class="excluded-note" id="excludedNote"></div>
+
+      <details class="raw-toggle">
+        <summary>▸ 抽出データを見る（デバッグ用）</summary>
+        <pre id="rawOutput"></pre>
+      </details>
+    </div>
+  </section>
+
+  <section id="how-it-works">
+    <div class="section-head">
+      <span class="section-num">◎</span>
+      <h2>この解析について</h2>
+    </div>
+    <div class="how-list">
+      <div class="how-item">
+        <div class="how-num">1</div>
+        <div class="how-body">
+          <h3>タイトル・氏名の自動検出</h3>
+          <p>1ページ目の上部（本文が始まる前）にある、フォントサイズが大きいテキスト塊をタイトル・氏名・所属（ゼミ名など）として検出し、本文の文字数から除外します。</p>
+        </div>
+      </div>
+      <div class="how-item">
+        <div class="how-num">2</div>
+        <div class="how-body">
+          <h3>参考文献の自動検出</h3>
+          <p>「引用文献」「参考文献」「参考資料」などの見出しを検索し、それ以降の全ページを本文の文字数計算から除外します。見出しが見つからない場合は文書全体を本文として扱います。</p>
+        </div>
+      </div>
+      <div class="how-item">
+        <div class="how-num">3</div>
+        <div class="how-body">
+          <h3>フォント名・サイズの抽出</h3>
+          <p>PDF内部に埋め込まれたフォント情報（例：<code>YuGothic-Bold</code>、<code>MS-Mincho</code>）を文字単位で読み取り、タイトル・氏名・ゼミ名それぞれで最も多く使われているフォントとサイズ、および本文全体で最も使用頻度の高いフォントとサイズを表示します。</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="caveat">
+      ※ 解析はブラウザ内で完結し、PDFファイルはサーバーに送信されません。<br>
+      ※ レイアウトが特殊なPDF（画像化されたテキスト、複雑な段組みなど）では、タイトル・氏名や参考文献の自動検出が正しく機能しない場合があります。その場合は下部の「抽出データを見る」で内訳を確認してください。<br>
+      ※ 文字数には空白・記号・数字も1字として含まれます（改行のみの空行は除く）。
+    </p>
+  </section>
+
+  <footer>
+    <span>PDF解析はすべてクライアントサイド（ブラウザ内）で実行されます</span>
+    <span>Powered by PDF.js</span>
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// ---------- hero decorative grid ----------
+(function initHeroGrid(){
+  const grid = document.getElementById('heroGrid');
+  const sample = "人工知能による解析結果を原稿用紙のように表示します";
+  const total = 30;
+  for(let i=0;i<total;i++){
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    if(i < sample.length){
+      cell.textContent = sample[i];
+      cell.classList.add('filled');
+    }
+    grid.appendChild(cell);
+  }
+})();
+
+// ---------- DOM refs ----------
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const fileNameEl = document.getElementById('fileName');
+const statusText = document.getElementById('statusText');
+const spinner = document.getElementById('spinner');
+const errorBox = document.getElementById('errorBox');
+const results = document.getElementById('results');
+const charCountEl = document.getElementById('charCount');
+const pageCountEl = document.getElementById('pageCount');
+const pageSubEl = document.getElementById('pageSub');
+const fontTableBody = document.getElementById('fontTableBody');
+const excludedNote = document.getElementById('excludedNote');
+const rawOutput = document.getElementById('rawOutput');
+const stampBadge = document.getElementById('stampBadge');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('keydown', (e) => { if(e.key==='Enter' || e.key===' ') fileInput.click(); });
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', (e) => {
+  if(e.target.files.length) handleFile(e.target.files[0]);
+});
+
+function showError(msg){
+  errorBox.textContent = msg;
+  errorBox.classList.add('active');
+}
+function clearError(){
+  errorBox.classList.remove('active');
+  errorBox.textContent = '';
+}
+function setStatus(msg, busy){
+  statusText.textContent = msg;
+  spinner.classList.toggle('active', !!busy);
+}
+
+const REFERENCE_HEADING_PATTERNS = [
+  /引用文献/, /参考文献/, /参考資料/, /出典/, /^references$/i, /^bibliography$/i
+];
+
+async function handleFile(file){
+  clearError();
+  results.classList.remove('active');
+  fileNameEl.textContent = file.name;
+
+  if(file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){
+    showError('PDFファイルを選択してください。');
+    return;
+  }
+
+  setStatus('PDFを読み込んでいます…', true);
+
+  try{
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+
+    setStatus(`テキストとフォント情報を抽出しています…（全${pdf.numPages}ページ）`, true);
+
+    const pages = []; // per page: { items: [{str, fontName, height, transform}], viewportHeight }
+    for(let p = 1; p <= pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const textContent = await page.getTextContent();
+      const viewport = page.getViewport({ scale: 1 });
+      pages.push({ items: textContent.items, viewportHeight: viewport.height, styles: textContent.styles });
+    }
+
+    setStatus('文字数を集計しています…', true);
+    const analysis = analyzeDocument(pages);
+    renderResults(analysis, file.name, pdf.numPages);
+    setStatus(`完了：${pdf.numPages}ページを解析しました。`, false);
+
+  }catch(err){
+    console.error(err);
+    setStatus('', false);
+    showError('PDFの解析に失敗しました。ファイルが破損しているか、パスワード保護されている可能性があります。（' + (err && err.message ? err.message : '不明なエラー') + '）');
+  }
+}
+
+// Build per-character records from a page's text items, approximating
+// per-character font/size using each item's dominant style (pdf.js
+// groups runs of same-style text into "items", which is sufficient
+// granularity for this analysis).
+function buildCharRecords(page, pageIndex){
+  const records = [];
+  for(const item of page.items){
+    const str = item.str || '';
+    if(str.length === 0) continue;
+    const styleKey = item.fontName;
+    const style = page.styles ? page.styles[styleKey] : null;
+    const fontFamily = (style && style.fontFamily) ? style.fontFamily : styleKey;
+    // font size approx from transform matrix (scale factor)
+    const tm = item.transform;
+    const size = tm ? Math.hypot(tm[2], tm[3]) || Math.hypot(tm[0], tm[1]) : 0;
+    const top = tm ? tm[5] : 0; // y position (pdf space, origin bottom-left)
+
+    for(const ch of str){
+      records.push({
+        ch,
+        page: pageIndex,
+        font: fontFamily,
+        size: Math.round(size * 10) / 10,
+        top
+      });
+    }
+    // represent inter-item spacing/newlines minimally; item.hasEOL marks line breaks
+  }
+  return records;
+}
+
+function analyzeDocument(pages){
+  const allPageRecords = pages.map((p, i) => buildCharRecords(p, i));
+
+  // ---- Determine header block on page 0: title/name/seminar ----
+  // Heuristic: on page 0, sort distinct "line groups" by vertical position (top desc = higher on page in PDF coords... 
+  // pdf.js text items give y in PDF user space where higher y = higher on page)
+  // We'll group page-0 records into lines by rounding 'top'.
+  const page0 = allPageRecords[0] || [];
+  const lineMap = new Map();
+  for(const r of page0){
+    const key = Math.round(r.top);
+    if(!lineMap.has(key)) lineMap.set(key, []);
+    lineMap.get(key).push(r);
+  }
+  // Sort lines top-to-bottom on the page: in PDF space, larger 'top' (y) = higher on page.
+  const sortedLineKeys = Array.from(lineMap.keys()).sort((a,b) => b - a);
+
+  // Find the body-start line: the first line whose modal font size is close to the
+  // "common" body size across the whole doc (computed below), OR whichever line
+  // starts with a numbering pattern like "1．" "１." "はじめに" etc.
+  // Simpler robust heuristic: header block = the first N lines (typically 1-4)
+  // that have a font size >= 1.15x the document's most common font size,
+  // OR are among the first 4 lines AND are short (<=40 chars) — this captures
+  // title (large), name, and seminar/affiliation line even if same size as body,
+  // as long as they precede the first long paragraph line.
+
+  // Compute global font-size histogram (whole doc) to find "body size"
+  const allRecords = allPageRecords.flat();
+  const sizeCounts = new Map();
+  for(const r of allRecords){
+    const key = r.size;
+    sizeCounts.set(key, (sizeCounts.get(key)||0) + 1);
+  }
+  let bodySize = null, bodySizeCount = -1;
+  for(const [size, count] of sizeCounts){
+    if(count > bodySizeCount){ bodySizeCount = count; bodySize = size; }
+  }
+
+  // Walk lines from top; a line belongs to the "header block" (title/name/seminar)
+  // if it occurs before the first line whose length exceeds ~40 chars AND whose
+  // modal size equals bodySize (i.e., the first real body paragraph line).
+  let headerLineKeys = [];
+  let bodyStartFound = false;
+  for(const key of sortedLineKeys){
+    if(bodyStartFound) break;
+    const recs = lineMap.get(key);
+    const text = recs.map(r=>r.ch).join('');
+    const trimmed = text.trim();
+    if(trimmed.length === 0) continue; // skip blank spacer lines but don't count as body start
+    const modalSize = modeOf(recs.map(r=>r.size));
+    const looksLikeBodyParagraph = trimmed.length > 40 && Math.abs(modalSize - bodySize) < 0.3;
+    const looksLikeSectionHeading = /^[0-9１-９1-9][\.．]/.test(trimmed) && trimmed.length < 30;
+    if(looksLikeBodyParagraph || looksLikeSectionHeading){
+      bodyStartFound = true;
+      break;
+    }
+    headerLineKeys.push(key);
+    // safety cap: header block shouldn't exceed ~6 lines
+    if(headerLineKeys.length >= 6) { bodyStartFound = true; break; }
+  }
+
+  const headerRecords = headerLineKeys.flatMap(k => lineMap.get(k));
+
+  // classify header lines into title vs name/seminar by size: largest size = title,
+  // remaining = name/seminar block
+  let titleSize = -1;
+  for(const r of headerRecords) if(r.size > titleSize) titleSize = r.size;
+  const titleRecords = headerRecords.filter(r => Math.abs(r.size - titleSize) < 0.3);
+  const nameSeminarRecords = headerRecords.filter(r => Math.abs(r.size - titleSize) >= 0.3);
+
+  // Within nameSeminarRecords, try to split name (usually larger/first) vs seminar (smaller/second)
+  const nsSizes = Array.from(new Set(nameSeminarRecords.map(r=>r.size))).sort((a,b)=>b-a);
+  const nameSize = nsSizes[0];
+  const seminarSize = nsSizes.length > 1 ? nsSizes[1] : null;
+  const nameRecords = nameSeminarRecords.filter(r => Math.abs(r.size - nameSize) < 0.3);
+  const seminarRecords = seminarSize !== null ? nameSeminarRecords.filter(r => Math.abs(r.size - seminarSize) < 0.3) : [];
+
+  // ---- Find reference section start (page, top) ----
+  let refPageIdx = null, refTop = null;
+  outer:
+  for(let pi = 0; pi < pages.length; pi++){
+    const recs = allPageRecords[pi];
+    const lm = new Map();
+    for(const r of recs){
+      const key = Math.round(r.top);
+      if(!lm.has(key)) lm.set(key, []);
+      lm.get(key).push(r);
+    }
+    for(const [key, recsAtLine] of lm){
+      const text = recsAtLine.map(r=>r.ch).join('');
+      for(const pat of REFERENCE_HEADING_PATTERNS){
+        if(pat.test(text)){
+          refPageIdx = pi; refTop = key;
+          break outer;
+        }
+      }
+    }
+  }
+
+  // ---- Build body records: everything except header block (page0) and reference section onward ----
+  const headerKeySet = new Set(headerLineKeys.map(k => `0:${k}`));
+  const bodyRecords = [];
+  const excludedHeaderCount = headerRecords.length;
+  let excludedRefCount = 0;
+
+  for(let pi = 0; pi < allPageRecords.length; pi++){
+    for(const r of allPageRecords[pi]){
+      if(pi === 0 && headerKeySet.has(`0:${Math.round(r.top)}`)) continue; // exclude header block
+      if(refPageIdx !== null){
+        if(pi > refPageIdx) { excludedRefCount++; continue; }
+        if(pi === refPageIdx && r.top <= refTop + 0.5) { excludedRefCount++; continue; }
+      }
+      // exclude pure whitespace chars from the count (spaces used as layout filler)
+      bodyRecords.push(r);
+    }
+  }
+
+  // character count: count all non-whitespace-only... actually keep spaces (they're content-adjacent in JP text rarely)
+  // but exclude records whose ch is a control/blank used purely for line-end padding.
+  const meaningfulBody = bodyRecords.filter(r => r.ch !== '\u0000');
+  const charCount = meaningfulBody.filter(r => r.ch.trim().length > 0 || r.ch === '　').length;
+
+  // ---- font tallies ----
+  function tally(records){
+    const counts = new Map();
+    for(const r of records){
+      if(r.ch.trim().length === 0 && r.ch !== '　') continue;
+      const key = r.font + '@@' + r.size;
+      if(!counts.has(key)) counts.set(key, { font: r.font, size: r.size, count: 0 });
+      counts.get(key).count++;
+    }
+    return Array.from(counts.values()).sort((a,b)=>b.count-a.count);
+  }
+
+  const titleFonts = tally(titleRecords);
+  const nameFonts = tally(nameRecords);
+  const seminarFonts = tally(seminarRecords);
+  const bodyFonts = tally(meaningfulBody);
+
+  return {
+    charCount,
+    pageCount: pages.length,
+    refFound: refPageIdx !== null,
+    refPageIdx,
+    titleText: linesToText(titleRecords),
+    nameText: linesToText(nameRecords),
+    seminarText: linesToText(seminarRecords),
+    titleFonts, nameFonts, seminarFonts, bodyFonts,
+    headerLineCount: headerLineKeys.length,
+    debug: {
+      bodySize, titleSize, nameSize, seminarSize,
+      headerLines: headerLineKeys.map(k => lineMap.get(k).map(r=>r.ch).join('')),
+      refFound: refPageIdx !== null,
+      refPageIdx, refTop,
+      totalRawChars: allRecords.length,
+      excludedHeaderCount, excludedRefCount
+    }
+  };
+}
+
+function modeOf(arr){
+  const counts = new Map();
+  for(const v of arr) counts.set(v, (counts.get(v)||0)+1);
+  let best=null, bestCount=-1;
+  for(const [v,c] of counts) if(c>bestCount){best=v;bestCount=c;}
+  return best;
+}
+
+function linesToText(records){
+  return records.map(r=>r.ch).join('').trim();
+}
+
+function fmtFontRow(entry){
+  if(!entry) return { font: '—', size: '—' };
+  return { font: entry.font.replace(/^.*\+/, ''), size: entry.size ? entry.size.toFixed(1) + 'pt' : '—' };
+}
+
+function renderResults(a, filename, numPages){
+  results.classList.add('active');
+
+  charCountEl.innerHTML = (a.charCount.toLocaleString('ja-JP')) + '<span class="unit">字</span>';
+  pageCountEl.innerHTML = numPages + '<span class="unit">頁</span>';
+  pageSubEl.textContent = a.refFound
+    ? `参考文献はページ${a.refPageIdx+1}以降として検出`
+    : '参考文献の見出しは検出されませんでした（全文を本文として計算）';
+
+  stampBadge.textContent = a.refFound ? '検 印 済' : '要 確 認';
+  stampBadge.style.color = a.refFound ? 'var(--hanko)' : 'var(--indigo)';
+  stampBadge.style.borderColor = a.refFound ? 'var(--hanko)' : 'var(--indigo)';
+
+  // font table rows
+  const rows = [];
+  const titleTop = fmtFontRow(a.titleFonts[0]);
+  rows.push(rowHtml('title', 'タイトル', a.titleText, titleTop, a.titleFonts.reduce((s,e)=>s+e.count,0)));
+
+  const nameTop = fmtFontRow(a.nameFonts[0]);
+  rows.push(rowHtml('name', '氏名', a.nameText, nameTop, a.nameFonts.reduce((s,e)=>s+e.count,0)));
+
+  if(a.seminarFonts.length){
+    const semTop = fmtFontRow(a.seminarFonts[0]);
+    rows.push(rowHtml('seminar', 'ゼミ名等', a.seminarText, semTop, a.seminarFonts.reduce((s,e)=>s+e.count,0)));
+  }
+
+  const bodyTop = fmtFontRow(a.bodyFonts[0]);
+  rows.push(rowHtml('body', '本文（最頻出）', '', bodyTop, a.bodyFonts.reduce((s,e)=>s+e.count,0)));
+
+  fontTableBody.innerHTML = rows.join('');
+
+  excludedNote.innerHTML = `<strong>除外内訳：</strong> タイトル・氏名・所属ブロック ${a.debug.excludedHeaderCount.toLocaleString('ja-JP')}字、` +
+    (a.refFound ? `参考文献セクション以降 ${a.debug.excludedRefCount.toLocaleString('ja-JP')}字` : '参考文献セクションは検出されませんでした') +
+    ` を本文文字数から除外しています。`;
+
+  rawOutput.textContent = JSON.stringify({
+    filename,
+    charCount: a.charCount,
+    detectedTitle: a.titleText,
+    detectedName: a.nameText,
+    detectedSeminar: a.seminarText,
+    bodyTopFonts: a.bodyFonts.slice(0,5),
+    debug: a.debug
+  }, null, 2);
+
+  document.getElementById('results-section').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function rowHtml(roleClass, roleLabel, textPreview, fontInfo, count){
+  const preview = textPreview ? `<div style="font-size:11.5px;color:var(--pencil);margin-top:2px;">「${escapeHtml(truncate(textPreview, 22))}」</div>` : '';
+  return `<tr>
+    <td><span class="role-tag ${roleClass}">${roleLabel}</span>${preview}</td>
+    <td class="mono">${escapeHtml(fontInfo.font)}</td>
+    <td class="mono">${fontInfo.size}</td>
+    <td class="mono">${count.toLocaleString('ja-JP')}</td>
+  </tr>`;
+}
+
+function truncate(s, n){ return s.length > n ? s.slice(0,n) + '…' : s; }
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+
+</body>
+</html>
