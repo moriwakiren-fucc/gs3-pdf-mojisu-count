@@ -165,7 +165,7 @@
   }
 
   /* results */
-  #results{ display: none; margin-top: 56px; }
+  #results{ display: block; margin-top: 56px; }
 
   .section-head{
     display: flex;
@@ -558,6 +558,7 @@ async function handleFiles(files){
   }
 
   results.innerHTML = '';
+  results.style.display = 'block';
   fileListEl.innerHTML = '';
   document.getElementById('filenameDisplay')?.remove();
 
