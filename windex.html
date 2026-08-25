@@ -451,7 +451,7 @@
     <span class="ruby-note">TITLE PAGE FONT INSPECTOR — 表題・氏名・所属・本文の書体を数える</span>
   </h1>
   <p class="lede">
-    PDFを読み込むと（複数ファイルまとめて可）、埋め込みフォントの実体を1文字ずつ調べます。表題・氏名・ゼミ名（所属）を自動で見分け、それぞれの書体名と文字サイズを表にします。あわせて、表題・氏名・参考文献一覧を除いた「本文」の文字数も数えます。既定の基準（本文3000字以上、タイトルはゴシック16pt、氏名は明朝12pt、ゼミ名10.5pt、本文10／10.5pt）を満たす項目は緑、満たさない項目は赤で表示します。すべてブラウザ内で処理し、ファイルはどこにも送信しません。
+    PDFを読み込むと（複数ファイルまとめて可）、埋め込みフォントの実体を1文字ずつ調べます。表題・氏名・ゼミ名（所属）を自動で見分け、それぞれの書体名と文字サイズを表にします。あわせて、表題・氏名・参考文献一覧を除いた「本文」の文字数も数えます。既定の基準（本文3000字以上、タイトル16pt、氏名12pt、ゼミ名10.5pt、本文10／10.5pt）を満たす項目は緑、満たさない項目は赤で表示します。すべてブラウザ内で処理し、ファイルはどこにも送信しません。
   </p>
 </header>
 
@@ -470,7 +470,7 @@
 
 <footer>
   PDF.js による解析 — ブラウザ内処理 / 検出結果はPDFの内部構造（埋め込みフォント名・文字座標）に基づく推定です。表題・氏名・所属・参考文献の判定はレイアウト上の手がかり（フォントサイズ・位置・記号）による自動判定のため、文書によっては手動確認を推奨します。<br><br>
-  判定基準 — 本文文字数: 3000字以上／タイトル書体: ゴシック体／タイトルサイズ: 16pt／氏名書体: 明朝体／氏名サイズ: 12pt／ゼミ名（所属）サイズ: 10.5pt／本文サイズ: 10pt または 10.5pt。基準を満たす項目は緑、満たさない項目は赤で表示されます。
+  判定基準 — 本文文字数: 3000字以上／タイトルサイズ: 16pt／氏名サイズ: 12pt／ゼミ名（所属）サイズ: 10.5pt／本文サイズ: 10pt または 10.5pt。基準を満たす項目は緑、満たさない項目は赤で表示されます。
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -493,20 +493,6 @@ const CRITERIA = {
 };
 const SIZE_TOL = 0.15; // pt単位の丸め誤差許容
 
-function isGothicFont(fontName){
-  if(!fontName) return false;
-  const f = fontName.toLowerCase();
-  return /gothic|gosic|goshic|pgothic|ゴシック|meiryo|yugoth|yu gothic|hiragino.*(sans|kaku)|noto sans|noto sans jp|ms\s?pゴシック|ms\s?ゴシック/i.test(f);
-}
-function isMinchoFont(fontName){
-  if(!fontName) return false;
-  const f = fontName.toLowerCase();
-  return /mincho|明朝|yumin|yu mincho|hiragino.*mincho|ms\s?p明朝|ms\s?明朝|rui?mincho|noto serif/i.test(f);
-}
-function fontsMatch(fonts, testFn){
-  if(!fonts || fonts.length === 0) return false;
-  return fonts.some(testFn);
-}
 function sizeMatches(size, target){
   if(size === null || size === undefined) return false;
   return Math.abs(size - target) < SIZE_TOL;
@@ -847,16 +833,14 @@ function analyze(runs, filename, fileIndex, fileTotal){
 
   // --- Judgements ---
   const judgeBody = bodyCount >= CRITERIA.bodyCharMin;
-  const judgeTitleFont = fontsMatch(titleFonts, isGothicFont);
   const judgeTitleSize = sizeMatches(titleSize, CRITERIA.titleSize);
-  const judgeNameFont = fontsMatch(nameFonts, isMinchoFont);
   const judgeNameSize = sizeMatches(nameSize, CRITERIA.nameSize);
   const judgeAffSize = affSize !== null ? sizeMatches(affSize, CRITERIA.affSize) : null; // null = 所属未検出
   const judgeBodySize = sizeMatchesAny(bodyStyle.size, CRITERIA.bodySizes);
 
   const judgements = {
-    body: judgeBody, titleFont: judgeTitleFont, titleSize: judgeTitleSize,
-    nameFont: judgeNameFont, nameSize: judgeNameSize, affSize: judgeAffSize, bodySize: judgeBodySize
+    body: judgeBody, titleSize: judgeTitleSize,
+    nameSize: judgeNameSize, affSize: judgeAffSize, bodySize: judgeBodySize
   };
 
   // --- Build card ---
@@ -961,25 +945,18 @@ function judgeMarkHtml(v, okLabel, ngLabel){
 function renderNameTable(card, titleText, titleFonts, titleSize, nameText, nameFonts, nameSize, affText, affFonts, affSize, judgements){
   const tbody = card.querySelector('.nameTableBody');
   const rows = [
-    {
-      label: '表題', text: titleText, fonts: titleFonts,
-      fontClass: judgeCellClass(judgements.titleFont),
-      fontMark: judgeMarkHtml(judgements.titleFont, 'ゴシック体', 'ゴシック体ではありません')
-    },
-    {
-      label: '氏名', text: nameText, fonts: nameFonts,
-      fontClass: judgeCellClass(judgements.nameFont),
-      fontMark: judgeMarkHtml(judgements.nameFont, '明朝体', '明朝体ではありません')
-    },
+    { label: '表題', text: titleText, fonts: titleFonts, size: titleSize },
+    { label: '氏名', text: nameText, fonts: nameFonts, size: nameSize },
   ];
   if(affText){
-    rows.push({ label: '所属（ゼミ等）', text: affText, fonts: affFonts, fontClass: '', fontMark: '' });
+    rows.push({ label: '所属（ゼミ等）', text: affText, fonts: affFonts, size: affSize });
   }
   tbody.innerHTML = rows.map(r => `
     <tr>
       <td>${r.label}</td>
       <td class="sample">${escapeHtml(r.text)}</td>
-      <td class="mono ${r.fontClass}">${r.fonts.map(shortFontLabel).join(', ') || '—'}${r.fontMark}</td>
+      <td class="mono">${r.fonts.map(shortFontLabel).join(', ') || '—'}</td>
+      <td class="mono">${r.size !== null && r.size !== undefined ? r.size + 'pt' : '—'}</td>
     </tr>
   `).join('');
 }
@@ -1048,7 +1025,7 @@ function renderNote(card, filename, hasRefs){
     ${hasRefs ? '引用/参考文献一覧（「引用文献」「参考文献」等の見出し以降すべて）' : '引用/参考文献一覧（見出しが検出されませんでした）'}
     を除いた文字数を集計しています。段組・図表・脚注が複雑なPDFでは誤検出の可能性があるため、
     重要な用途では目視でのご確認をおすすめします。<br><br>
-    <b>色分けの基準</b> — 本文文字数3000字以上／タイトル書体ゴシック・16pt／氏名書体明朝・12pt／所属（ゼミ名）10.5pt／
+    <b>色分けの基準</b> — 本文文字数3000字以上／タイトルサイズ16pt／氏名サイズ12pt／所属（ゼミ名）10.5pt／
     本文サイズ10ptまたは10.5ptを満たす項目は<span class="judge-ok">緑</span>、満たさない項目は<span class="judge-ng">赤</span>で表示しています。
   `;
 }
