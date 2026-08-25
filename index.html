@@ -963,12 +963,49 @@ function analyzeDocument(pages){
   const titleRecords = headerRecords.filter(r => Math.abs(r.size - titleSize) < 0.3);
   const nameSeminarRecords = headerRecords.filter(r => Math.abs(r.size - titleSize) >= 0.3);
 
-  // Within nameSeminarRecords, try to split name (usually larger/first) vs seminar (smaller/second)
-  const nsSizes = Array.from(new Set(nameSeminarRecords.map(r=>r.size))).sort((a,b)=>b-a);
-  const nameSize = nsSizes[0];
-  const seminarSize = nsSizes.length > 1 ? nsSizes[1] : null;
-  const nameRecords = nameSeminarRecords.filter(r => Math.abs(r.size - nameSize) < 0.3);
-  const seminarRecords = seminarSize !== null ? nameSeminarRecords.filter(r => Math.abs(r.size - seminarSize) < 0.3) : [];
+  // Within nameSeminarRecords, try to split name vs seminar/affiliation.
+  // Affiliation lines are often wrapped in brackets (〈 〉 【 】 「 」 《 》 etc.) —
+  // prefer detecting that pattern first, since it's a stronger signal than font size.
+  // Fall back to the size-based rule (larger = name, smaller = seminar) when no
+  // bracketed line is found among the header lines.
+  const BRACKET_PATTERN = /[〈《「『【（(][^〉》」』】）)]*[〉》」』】）)]/;
+
+  // Group nameSeminarRecords back into lines (by their original header line key) so we
+  // can test each line's full text for the bracket pattern.
+  const nsLineKeys = headerLineKeys.filter(k => {
+    const recs = lineMap.get(k);
+    return recs.some(r => Math.abs(r.size - titleSize) >= 0.3);
+  });
+
+  let seminarRecords = [];
+  let nameRecords = [];
+  let nameSize = null, seminarSize = null;
+  let bracketLineKey = null;
+  for(const k of nsLineKeys){
+    const recs = lineMap.get(k);
+    const text = recs.map(r => r.ch).join('');
+    if(BRACKET_PATTERN.test(text)){
+      bracketLineKey = k;
+      break;
+    }
+  }
+
+  if(bracketLineKey !== null){
+    // Bracketed line = affiliation; everything else in the name/seminar block = name.
+    seminarRecords = lineMap.get(bracketLineKey);
+    nameRecords = nsLineKeys
+      .filter(k => k !== bracketLineKey)
+      .flatMap(k => lineMap.get(k));
+    seminarSize = seminarRecords.length ? modeOf(seminarRecords.map(r=>r.size)) : null;
+    nameSize = nameRecords.length ? modeOf(nameRecords.map(r=>r.size)) : null;
+  } else {
+    // Fallback: previous size-based rule (larger = name, smaller = seminar).
+    const nsSizes = Array.from(new Set(nameSeminarRecords.map(r=>r.size))).sort((a,b)=>b-a);
+    nameSize = nsSizes[0];
+    seminarSize = nsSizes.length > 1 ? nsSizes[1] : null;
+    nameRecords = nameSeminarRecords.filter(r => Math.abs(r.size - nameSize) < 0.3);
+    seminarRecords = seminarSize !== null ? nameSeminarRecords.filter(r => Math.abs(r.size - seminarSize) < 0.3) : [];
+  }
 
   // ---- Find reference section start (page, top) ----
   let refPageIdx = null, refTop = null;
@@ -1013,7 +1050,9 @@ function analyzeDocument(pages){
   // character count: count all non-whitespace-only... actually keep spaces (they're content-adjacent in JP text rarely)
   // but exclude records whose ch is a control/blank used purely for line-end padding.
   const meaningfulBody = bodyRecords.filter(r => r.ch !== '\u0000');
-  const charCount = meaningfulBody.filter(r => r.ch.trim().length > 0 || r.ch === '　').length;
+  // Count every character including all whitespace (half-width & full-width spaces),
+  // symbols, and numbers. Only truly empty entries (no character at all) are excluded.
+  const charCount = meaningfulBody.filter(r => r.ch.length > 0).length;
 
   // ---- font tallies ----
   function tally(records){
